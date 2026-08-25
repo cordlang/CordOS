@@ -823,7 +823,9 @@ static bool gfx_login(void)
         }
 
         if (mouse_x() != last_x || mouse_y() != last_y) {
-            login_cursor_at();
+            if (!dirty) {
+                login_cursor_at();
+            }
             last_x = mouse_x();
             last_y = mouse_y();
         }

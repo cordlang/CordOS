@@ -252,6 +252,16 @@ void lang_select_run(void)
             }
         }
 
+        if (!dirty && fb_available() &&
+            (mouse_x() != last_x || mouse_y() != last_y)) {
+            u32 live = lang_hit(mouse_x(), mouse_y());
+
+            if (live < 2u && live != focus) {
+                focus = live;
+                dirty = true;
+            }
+        }
+
         if (dirty) {
             draw_picker(focus);
             dirty = false;

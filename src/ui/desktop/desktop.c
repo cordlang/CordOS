@@ -1687,6 +1687,15 @@ void desktop_run(void)
             dirty = true;
         }
 
+        if (!dirty && (mouse_x() != last_x || mouse_y() != last_y)) {
+            u32 live = hit_test(mouse_x(), mouse_y());
+
+            if (live != s_hover) {
+                s_hover = live;
+                dirty = true;
+            }
+        }
+
         if (dirty) {
             desktop_redraw();
             dirty = false;

@@ -1270,12 +1270,16 @@ void cursor_draw(u32 x, u32 y)
 
 void cursor_flip(u32 x, u32 y)
 {
+    /* Present wipes the LFB. Drop the saved under from the previous
+     * frame or restore_under paints the old unhovered button back
+     * under the pointer (hover looks dead). */
     if (!fb_compose_ready()) {
         fb_compose_present();
         cursor_invalidate();
         cursor_stamp(x, y);
         return;
     }
+    cursor_invalidate();
     fb_compose_present();
     cursor_stamp(x, y);
 }

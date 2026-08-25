@@ -1163,7 +1163,11 @@ void onboarding_run(bool ask_lang)
                              hover >= HIT_NET0)
                                 ? CURSOR_KIND_POINTER
                                 : CURSOR_KIND_ARROW);
-            cursor_draw((u32)mouse_x(), (u32)mouse_y());
+            /* Hover already queued a full present; stamping first would
+             * save unhovered pixels and restore them under the cursor. */
+            if (!dirty && !first && step == prev) {
+                cursor_draw((u32)mouse_x(), (u32)mouse_y());
+            }
             lx = mouse_x();
             ly = mouse_y();
         }

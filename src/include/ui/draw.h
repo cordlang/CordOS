@@ -55,8 +55,7 @@ void cursor_hide(void);
 void cursor_set_kind(enum cursor_kind kind);
 void cursor_set_on_light(bool on_light);
 void cursor_draw(u32 x, u32 y);
-/* Stamp cursor onto the back buffer, present, then restore the back
- * scene so the pointer never disappears during a full-frame flip. */
+/* Present the composed scene, then stamp the cursor on the live LFB. */
 void cursor_flip(u32 x, u32 y);
 
 #endif
