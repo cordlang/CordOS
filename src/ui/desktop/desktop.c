@@ -1,8 +1,10 @@
 #include "desktop.h"
 #include "animation.h"
+#include "compositor.h"
 #include "config.h"
 #include "draw.h"
 #include "fb.h"
+#include "widget.h"
 #include "font.h"
 #include "i18n.h"
 #include "io.h"
@@ -116,7 +118,6 @@ static u32 s_last_min = 0xFFFFFFFFu;
 static void settings_layout(const struct window *w, u32 *lang_y, u32 *wp_y,
                             u32 *ic_y);
 static enum cursor_kind desktop_cursor_kind(u32 hit);
-static void desktop_cursor_at(void);
 static void desktop_redraw(void);
 
 static int streq(const char *a, const char *b)
@@ -967,12 +968,6 @@ static enum cursor_kind desktop_cursor_kind(u32 hit)
     return CURSOR_KIND_ARROW;
 }
 
-static void desktop_cursor_at(void)
-{
-    cursor_set_kind(desktop_cursor_kind(hit_test(mouse_x(), mouse_y())));
-    cursor_draw((u32)mouse_x(), (u32)mouse_y());
-}
-
 static void action_open(u32 item)
 {
     s_menu = false;
@@ -1394,7 +1389,8 @@ static void desktop_redraw(void)
     if (s_ctx) {
         draw_ctx();
     }
-    cursor_flip((u32)mouse_x(), (u32)mouse_y());
+    ui_comp_mark_full();
+    ui_comp_present();
 }
 
 static void desktop_drag(u32 id, i32 old_x, i32 old_y)
@@ -1593,6 +1589,82 @@ static void handle_key(u32 key)
     }
 }
 
+static bool desk_chrome_hit(u32 hit)
+{
+    if (hit == HIT_LAUNCHER) {
+        return true;
+    }
+    if (hit >= HIT_DOCK && hit < HIT_DOCK + ICON_COUNT) {
+        return true;
+    }
+    if (hit >= HIT_MENU && hit < HIT_MENU + MENU_COUNT) {
+        return true;
+    }
+    return false;
+}
+
+static bool desktop_widgets(void)
+{
+    const enum ui_icon apps[DOCK_APPS] = {
+        UI_ICON_LAUNCHER, UI_ICON_FILES, UI_ICON_TERM, UI_ICON_SETTINGS,
+        UI_ICON_ABOUT
+    };
+    const enum win_kind kinds[DOCK_APPS] = {
+        WIN_FILES, WIN_FILES, WIN_TERM, WIN_SETTINGS, WIN_ABOUT
+    };
+    const enum msg_id labels[MENU_COUNT] = {
+        MSG_HOME_FILES, MSG_HOME_TERMINAL, MSG_HOME_SETTINGS,
+        MSG_HOME_ABOUT, MSG_HOME_LOGOUT, MSG_HOME_POWER
+    };
+    u32 dx;
+    u32 dy;
+    u32 dw;
+    u32 dh;
+    u32 i;
+    bool need_full = false;
+
+    dock_geom(&dx, &dy, &dw, &dh);
+    ui_begin(mouse_x(), mouse_y(), mouse_buttons(), time_uptime_ms());
+    for (i = 0; i < DOCK_APPS; ++i) {
+        u32 sx = dock_slot_x(dx, i);
+        bool acc = (i == 0u && s_menu);
+        bool run = (i > 0u) && dock_app_running(kinds[i]);
+
+        if (ui_icon_btn(0xD00u + i, sx, dy, DOCK_SLOT, dh, apps[i], acc, run)) {
+            if (i == 0u) {
+                s_menu = !s_menu;
+                s_ctx = false;
+                need_full = true;
+            } else {
+                s_menu = false;
+                action_open(i - 1u);
+                need_full = true;
+            }
+        }
+    }
+    if (s_menu) {
+        u32 mx;
+        u32 my;
+        u32 mw;
+        u32 mh;
+
+        menu_geom(&mx, &my, &mw, &mh);
+        for (i = 0; i < MENU_COUNT; ++i) {
+            u32 ry = my + MENU_INSET + i * MENU_ROW;
+
+            if (ui_button(0xE00u + i, mx + MENU_INSET, ry + 2u,
+                          mw > MENU_INSET * 2u ? mw - MENU_INSET * 2u : mw,
+                          MENU_ROW > 4u ? MENU_ROW - 4u : MENU_ROW,
+                          i18n(labels[i]), false, true)) {
+                action_open(i);
+                need_full = true;
+            }
+        }
+    }
+    ui_end();
+    return need_full;
+}
+
 void desktop_run(void)
 {
     u32 i;
@@ -1640,7 +1712,8 @@ void desktop_run(void)
         ui_crossfade_from(from);
     }
     cursor_set_kind(desktop_cursor_kind(hit_test(mouse_x(), mouse_y())));
-    cursor_flip((u32)mouse_x(), (u32)mouse_y());
+    ui_comp_mark_full();
+    ui_comp_present();
     dirty = false;
     last_x = mouse_x();
     last_y = mouse_y();
@@ -1670,13 +1743,20 @@ void desktop_run(void)
                     last_x = mouse_x();
                     last_y = mouse_y();
                 } else if (hit != s_hover) {
+                    bool was = desk_chrome_hit(s_hover);
+                    bool now = desk_chrome_hit(hit);
+
                     s_hover = hit;
-                    dirty = true;
+                    if (!was || !now) {
+                        dirty = true;
+                    }
                 }
             } else if (ev.kind == MOUSE_EV_DOWN && ev.button == MOUSE_LEFT) {
                 s_hover = hit;
-                handle_click(hit);
-                dirty = true;
+                if (!desk_chrome_hit(hit)) {
+                    handle_click(hit);
+                    dirty = true;
+                }
             } else if (ev.kind == MOUSE_EV_DOWN && ev.button == MOUSE_RIGHT) {
                 handle_right_click(hit);
                 dirty = true;
@@ -1691,21 +1771,26 @@ void desktop_run(void)
             u32 live = hit_test(mouse_x(), mouse_y());
 
             if (live != s_hover) {
+                bool was = desk_chrome_hit(s_hover);
+                bool now = desk_chrome_hit(live);
+
                 s_hover = live;
-                dirty = true;
+                if (!was || !now) {
+                    dirty = true;
+                }
             }
         }
 
         if (dirty) {
             desktop_redraw();
             dirty = false;
-            last_x = mouse_x();
-            last_y = mouse_y();
-        } else if (mouse_x() != last_x || mouse_y() != last_y) {
-            desktop_cursor_at();
-            last_x = mouse_x();
-            last_y = mouse_y();
-        } else {
+        }
+        if (desktop_widgets()) {
+            dirty = true;
+        }
+        last_x = mouse_x();
+        last_y = mouse_y();
+        if (!dirty && !ui_busy() && !mouse_has_event()) {
             __asm__ volatile("hlt");
         }
     }

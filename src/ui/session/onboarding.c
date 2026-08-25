@@ -1,8 +1,10 @@
 #include "onboarding.h"
 #include "animation.h"
 #include "brand.h"
+#include "compositor.h"
 #include "draw.h"
 #include "fb.h"
+#include "widget.h"
 #include "font.h"
 #include "i18n.h"
 #include "keyboard.h"
@@ -570,21 +572,6 @@ static void ob_draw_glass_field(u32 x, u32 y, u32 w, u32 h, const char *text,
     }
 }
 
-static void ob_draw_glass_btn(u32 x, u32 y, u32 w, u32 h, const char *label,
-                             bool hot)
-{
-    u8 focus = hot ? 255u : 40u;
-    u32 tw;
-    u32 tx;
-    u32 ty;
-
-    ob_draw_glass_pill(x, y, w, h, focus);
-    tw = draw_text_width(label, 1);
-    tx = x + (w > tw ? (w - tw) / 2u : 0);
-    ty = y + (h > FONT_HEIGHT ? (h - FONT_HEIGHT) / 2u : 0);
-    draw_text(tx, ty, label, OB_WHITE, 1);
-}
-
 static void ob_draw_lock(u32 x, u32 y, struct rgb c, u8 a)
 {
     draw_round_fill(x, y + 5u, 10u, 8u, 2u, c, a);
@@ -671,13 +658,10 @@ static void draw_step(enum ob_step step, u32 hit, u32 lang_focus, bool field_on,
         }
     }
 
+    (void)lang_focus;
     if (step == OB_LANG) {
-        bool a = lang_focus == 0 || hit == HIT_LANG0;
-        bool b = lang_focus == 1 || hit == HIT_LANG1;
-
-        ob_draw_glass_btn(g.x0, content_y, g.cw, ROW_H, "Español", a);
-        ob_draw_glass_btn(g.x0, content_y + ROW_H + ROW_GAP, g.cw, ROW_H,
-                          "English", b);
+        /* Lang + nav buttons are toolkit widgets (hover/damage). */
+        (void)hit;
     } else if (step == OB_NAME) {
         ob_draw_glass_field(g.x0, content_y, g.cw, FIELD_H, s_name, false,
                             field_on, i18n(MSG_OB_NAME_PLACE));
@@ -743,28 +727,11 @@ static void draw_step(enum ob_step step, u32 hit, u32 lang_focus, bool field_on,
         }
     }
 
-    {
-        struct ob_btns b;
-
-        ob_btns_prep(step, &b, &g);
-        if (b.back) {
-            ob_draw_glass_btn(b.back_x, g.btn_y, b.bw, g.btn_h, i18n(MSG_OB_BACK),
-                              hit == HIT_BACK);
-        }
-        if (b.skip) {
-            ob_draw_glass_btn(b.skip_x, g.btn_y, b.bw, g.btn_h, b.skip_lab,
-                              hit == HIT_SKIP);
-        }
-        if (b.next) {
-            ob_draw_glass_btn(b.next_x, g.btn_y, b.bw, g.btn_h, b.next_lab,
-                              hit == HIT_NEXT);
-        }
-    }
-
+    (void)hit;
     if (show_cursor) {
-        cursor_flip((u32)mouse_x(), (u32)mouse_y());
+        ui_comp_mark_full();
+        ui_comp_present();
     }
-    /* else: leave the scene on the back buffer for a crossfade. */
 }
 
 static u32 ob_hit(enum ob_step step, i32 mx, i32 my, u32 lang_focus)
@@ -846,6 +813,108 @@ static enum ob_step step_back(enum ob_step step)
         return OB_WIFI;
     }
     return step;
+}
+
+#define WID_LANG0 1u
+#define WID_LANG1 2u
+#define WID_NEXT  3u
+#define WID_BACK  4u
+#define WID_SKIP  5u
+
+static void commit_user(void);
+
+static bool ob_run_widgets(enum ob_step *step, u32 *lang_focus, bool *field_on,
+                           bool *done)
+{
+    struct ob_geom g;
+    struct ob_btns b;
+    u32 content_y;
+    bool changed = false;
+
+    ob_layout(&g, *step);
+    ob_btns_prep(*step, &b, &g);
+    content_y = (u32)((i32)g.content_y + enter_dy());
+
+    ui_begin(mouse_x(), mouse_y(), mouse_buttons(), time_uptime_ms());
+
+    if (*step == OB_LANG) {
+        if (ui_button(WID_LANG0, g.x0, content_y, g.cw, ROW_H, "Español",
+                      *lang_focus == 0u, true)) {
+            *lang_focus = 0;
+            i18n_set_lang(LANG_ES);
+            (void)persist_set_u32("lang", 0);
+            changed = true;
+        }
+        if (ui_button(WID_LANG1, g.x0, content_y + ROW_H + ROW_GAP, g.cw, ROW_H,
+                      "English", *lang_focus == 1u, true)) {
+            *lang_focus = 1;
+            i18n_set_lang(LANG_EN);
+            (void)persist_set_u32("lang", 1);
+            changed = true;
+        }
+    }
+    if (b.back &&
+        ui_button(WID_BACK, b.back_x, g.btn_y, b.bw, g.btn_h, i18n(MSG_OB_BACK),
+                  false, true)) {
+        *step = step_back(*step);
+        changed = true;
+    }
+    if (b.skip &&
+        ui_button(WID_SKIP, b.skip_x, g.btn_y, b.bw, g.btn_h, b.skip_lab, false,
+                  true)) {
+        if (*step == OB_WIFI || *step == OB_CHECK) {
+            commit_user();
+            *step = OB_ANOTHER;
+            changed = true;
+        } else if (*step == OB_ANOTHER) {
+            *done = true;
+        }
+    }
+    if (b.next &&
+        ui_button(WID_NEXT, b.next_x, g.btn_y, b.bw, g.btn_h, b.next_lab, false,
+                  true)) {
+        if (*step == OB_LANG) {
+            i18n_set_lang(*lang_focus == 0 ? LANG_ES : LANG_EN);
+            (void)persist_set_u32("lang", (u32)i18n_lang());
+            *step = OB_WELCOME;
+        } else if (*step == OB_WELCOME) {
+            *step = OB_NAME;
+            *field_on = true;
+        } else if (*step == OB_NAME && s_nlen > 0) {
+            *step = OB_PASS;
+            *field_on = true;
+        } else if (*step == OB_PASS && s_plen > 0) {
+            *step = OB_WIFI;
+        } else if (*step == OB_WIFI) {
+            if (net_count() == 0u) {
+                commit_user();
+                *step = OB_ANOTHER;
+            } else if (net_is_eth(s_net) || !net_needs_pass(s_net) ||
+                       s_wplen > 0u) {
+                *step = OB_CHECK;
+                s_checking = true;
+                s_check_t = 0;
+                s_net_ok = false;
+            }
+        } else if (*step == OB_CHECK && !s_checking) {
+            commit_user();
+            *step = OB_ANOTHER;
+        } else if (*step == OB_ANOTHER) {
+            s_name[0] = '\0';
+            s_nlen = 0;
+            s_pass[0] = '\0';
+            s_plen = 0;
+            s_net = 0;
+            s_wifi_pass[0] = '\0';
+            s_wplen = 0;
+            *step = OB_NAME;
+            *field_on = true;
+        }
+        changed = true;
+    }
+
+    ui_end();
+    return changed;
 }
 
 static void ob_enter(enum ob_step step, u32 hover, u32 lang_focus, bool field_on)
@@ -950,7 +1019,9 @@ void onboarding_run(bool ask_lang)
 
         if (hover != last_hover) {
             last_hover = hover;
-            dirty = true;
+            if (hover == HIT_FIELD || hover >= HIT_NET0) {
+                dirty = true;
+            }
         }
 
         if (!first && step == prev && step == OB_WIFI && !s_scanned) {
@@ -1081,17 +1152,7 @@ void onboarding_run(bool ask_lang)
             }
             hit = ob_hit(step, mouse_x(), mouse_y(), lang_focus);
             if (ev.kind == MOUSE_EV_DOWN && ev.button == MOUSE_LEFT) {
-                if (hit == HIT_LANG0) {
-                    lang_focus = 0;
-                    i18n_set_lang(LANG_ES);
-                    (void)persist_set_u32("lang", 0);
-                    dirty = true;
-                } else if (hit == HIT_LANG1) {
-                    lang_focus = 1;
-                    i18n_set_lang(LANG_EN);
-                    (void)persist_set_u32("lang", 1);
-                    dirty = true;
-                } else if (hit == HIT_FIELD) {
+                if (hit == HIT_FIELD) {
                     field_on = true;
                     dirty = true;
                 } else if (hit >= HIT_NET0 && hit < HIT_NET0 + net_count()) {
@@ -1102,74 +1163,8 @@ void onboarding_run(bool ask_lang)
                     s_net = hit - HIT_NET0;
                     field_on = net_needs_pass(s_net);
                     dirty = true;
-                } else if (hit == HIT_BACK) {
-                    step = step_back(step);
-                    dirty = true;
-                } else if (hit == HIT_SKIP) {
-                    if (step == OB_WIFI || step == OB_CHECK) {
-                        commit_user();
-                        step = OB_ANOTHER;
-                        dirty = true;
-                    } else if (step == OB_ANOTHER) {
-                        return;
-                    }
-                } else if (hit == HIT_NEXT) {
-                    if (step == OB_LANG) {
-                        i18n_set_lang(lang_focus == 0 ? LANG_ES : LANG_EN);
-                        (void)persist_set_u32("lang", (u32)i18n_lang());
-                        step = OB_WELCOME;
-                    } else if (step == OB_WELCOME) {
-                        step = OB_NAME;
-                        field_on = true;
-                    } else if (step == OB_NAME && s_nlen > 0) {
-                        step = OB_PASS;
-                        field_on = true;
-                    } else if (step == OB_PASS && s_plen > 0) {
-                        step = OB_WIFI;
-                    } else if (step == OB_WIFI) {
-                        if (net_count() == 0u) {
-                            commit_user();
-                            step = OB_ANOTHER;
-                        } else if (net_is_eth(s_net) || !net_needs_pass(s_net) ||
-                                   s_wplen > 0u) {
-                            step = OB_CHECK;
-                            s_checking = true;
-                            s_check_t = 0;
-                            s_net_ok = false;
-                        }
-                    } else if (step == OB_CHECK && !s_checking) {
-                        commit_user();
-                        step = OB_ANOTHER;
-                    } else if (step == OB_ANOTHER) {
-                        s_name[0] = '\0';
-                        s_nlen = 0;
-                        s_pass[0] = '\0';
-                        s_plen = 0;
-                        s_net = 0;
-                        s_wifi_pass[0] = '\0';
-                        s_wplen = 0;
-                        step = OB_NAME;
-                        field_on = true;
-                    }
-                    dirty = true;
                 }
             }
-        }
-
-        if (mouse_x() != lx || mouse_y() != ly) {
-            cursor_set_kind((hover == HIT_NEXT || hover == HIT_SKIP ||
-                             hover == HIT_BACK || hover == HIT_FIELD ||
-                             hover == HIT_LANG0 || hover == HIT_LANG1 ||
-                             hover >= HIT_NET0)
-                                ? CURSOR_KIND_POINTER
-                                : CURSOR_KIND_ARROW);
-            /* Hover already queued a full present; stamping first would
-             * save unhovered pixels and restore them under the cursor. */
-            if (!dirty && !first && step == prev) {
-                cursor_draw((u32)mouse_x(), (u32)mouse_y());
-            }
-            lx = mouse_x();
-            ly = mouse_y();
         }
 
         if (first || step != prev) {
@@ -1177,16 +1172,29 @@ void onboarding_run(bool ask_lang)
             first = false;
             prev = step;
             dirty = false;
-            lx = mouse_x();
-            ly = mouse_y();
         } else if (dirty) {
-            draw_step(step, hover, lang_focus, field_on, true);
+            ui_comp_scene_begin();
+            draw_step(step, hover, lang_focus, field_on, false);
+            ui_comp_mark_full();
             dirty = false;
-            lx = mouse_x();
-            ly = mouse_y();
-        } else if (mouse_x() == lx && mouse_y() == ly &&
-                   !(step == OB_CHECK && s_checking)) {
+        }
+
+        {
+            bool done = false;
+
+            if (ob_run_widgets(&step, &lang_focus, &field_on, &done)) {
+                dirty = true;
+            }
+            if (done) {
+                return;
+            }
+        }
+
+        if (!dirty && !ui_busy() && mouse_x() == lx && mouse_y() == ly &&
+            !(step == OB_CHECK && s_checking)) {
             __asm__ volatile("hlt");
         }
+        lx = mouse_x();
+        ly = mouse_y();
     }
 }

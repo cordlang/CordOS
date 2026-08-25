@@ -200,6 +200,8 @@ KERNEL64_OBJS := \
 	out/login.o \
 	out/desktop.o \
 	out/draw.o \
+	out/compositor.o \
+	out/widget.o \
 	out/icons.o \
 	out/cursor_data.o \
 	out/font.o \
@@ -364,6 +366,10 @@ out/login.o: src/ui/login/login.c src/include/ui/brand.h $(PUB_HDRS) | build
 out/desktop.o: src/ui/desktop/desktop.c $(PUB_HDRS) | build
 	$(CC64) $(CFLAGS64) -c $< -o $@
 out/draw.o: src/ui/gfx/draw.c $(PUB_HDRS) | build
+	$(CC64) $(CFLAGS64) -c $< -o $@
+out/compositor.o: src/ui/gfx/compositor.c $(PUB_HDRS) | build
+	$(CC64) $(CFLAGS64) -c $< -o $@
+out/widget.o: src/ui/widgets/widget.c $(PUB_HDRS) | build
 	$(CC64) $(CFLAGS64) -c $< -o $@
 out/cursor_data.o: src/ui/gfx/cursor_data.c $(PUB_HDRS) | build
 	$(CC64) $(CFLAGS64) -c $< -o $@

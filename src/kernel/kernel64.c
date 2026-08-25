@@ -1,4 +1,5 @@
 #include "brand.h"
+#include "compositor.h"
 #include "config.h"
 #include "draw.h"
 #include "fb.h"
@@ -76,6 +77,7 @@ void kmain64(void *mb2_addr)
         mouse_set_bounds(fb_width(), fb_height());
         draw_boot_splash(8u);
         draw_quality_init();
+        ui_comp_init();
         draw_boot_splash(24u);
     }
 

@@ -1,10 +1,12 @@
 #include "gfx_session.h"
 #include "animation.h"
 #include "brand.h"
+#include "compositor.h"
 #include "config.h"
 #include "desktop.h"
 #include "draw.h"
 #include "fb.h"
+#include "widget.h"
 #include "font.h"
 #include "i18n.h"
 #include "io.h"
@@ -561,7 +563,8 @@ static void draw_login_screen(const struct login_draw *d, bool show_cursor)
 {
     paint_login_screen(d);
     if (show_cursor) {
-        cursor_flip((u32)mouse_x(), (u32)mouse_y());
+        ui_comp_mark_full();
+        ui_comp_present();
     } else {
         cursor_invalidate();
         fb_compose_present();
