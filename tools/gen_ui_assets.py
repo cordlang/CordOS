@@ -1,0 +1,169 @@
+#!/usr/bin/env python3
+"""Build wallpaper RGB blob + rounded AA font atlas from assets/."""
+from __future__ import annotations
+
+import os
+import sys
+
+sys.path.insert(0, "/tmp/nv/lib")
+from PIL import Image, ImageDraw, ImageFont  # noqa: E402
+
+ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+BG_DIR = os.path.join(ROOT, "assets", "backgrounds")
+# Rounded UI face. If missing, fall back to DejaVu so the build still works.
+_varela = os.path.join(ROOT, "assets", "fonts", "VarelaRound-Regular.ttf")
+_dejavu = os.path.join(ROOT, "assets", "fonts", "DejaVuSans.ttf")
+FONT_PATH = _varela if os.path.exists(_varela) else _dejavu
+FONT_NAME = "Varela Round" if FONT_PATH == _varela else "DejaVu Sans"
+BUILD = os.path.join(ROOT, "build")
+FONT_C = os.path.join(ROOT, "src", "ui", "font.c")
+FONT_H = os.path.join(ROOT, "src", "include", "font.h")
+
+W, H = 1920, 1080
+ASCII_CODEPOINTS = list(range(32, 127))
+EXTRA_CODEPOINTS = list(range(0x00A0, 0x0100)) + [
+    0x2013, 0x2014, 0x2018, 0x2019, 0x201C, 0x201D, 0x2026
+]
+CODEPOINTS = ASCII_CODEPOINTS + EXTRA_CODEPOINTS
+GLYPHS = len(CODEPOINTS)
+
+
+def cover_resize(img, tw, th):
+    img = img.convert("RGB")
+    sw, sh = img.size
+    scale = max(tw / sw, th / sh)
+    nw = max(1, int(sw * scale + 0.5))
+    nh = max(1, int(sh * scale + 0.5))
+    img = img.resize((nw, nh), Image.Resampling.LANCZOS)
+    left = (nw - tw) // 2
+    top = (nh - th) // 2
+    return img.crop((left, top, left + tw, top + th))
+
+
+def convert_wallpaper(src_name, dst_png, make_rgb=False):
+    src = os.path.join(BG_DIR, src_name)
+    img = Image.open(src)
+    img = cover_resize(img, W, H)
+    img.save(dst_png, "PNG", optimize=True)
+    if make_rgb:
+        os.makedirs(BUILD, exist_ok=True)
+        rgb_path = os.path.join(BUILD, "wallpaper.rgb")
+        with open(rgb_path, "wb") as f:
+            f.write(img.tobytes("raw", "RGB"))
+        print("wrote", rgb_path, os.path.getsize(rgb_path))
+    print("wrote", dst_png)
+
+
+def raster_one(point_size, width, height, codepoints):
+    """4x oversample then Lanczos downsample. Shared baseline for every glyph."""
+    scale = 4
+    font = ImageFont.truetype(FONT_PATH, point_size)
+    font_hi = ImageFont.truetype(FONT_PATH, point_size * scale)
+    ascent, descent = font_hi.getmetrics()
+    em = ascent + descent
+    top = max(0, (height * scale - em) // 2)
+    baseline = top + ascent
+    atlas = []
+    advances = []
+    for cp in codepoints:
+        ch = chr(cp)
+        canvas = Image.new("L", (width * scale, height * scale), 0)
+        draw_hi = ImageDraw.Draw(canvas)
+        draw_hi.text((0, baseline), ch, font=font_hi, fill=255, anchor="ls")
+        lo = canvas.resize((width, height), Image.Resampling.LANCZOS)
+        atlas.append(list(lo.getdata()))
+        adv = max(1, int(round(font.getlength(ch))))
+        if adv > width:
+            adv = width
+        advances.append(max(1, adv))
+    return atlas, advances
+
+
+def emit_array(name, atlas, width, height):
+    lines = [f"const u8 {name}[{GLYPHS}][{width * height}] = {{"]
+    for i, g in enumerate(atlas):
+        body = ", ".join(f"0x{v:02X}" for v in g)
+        lines.append(f"    {{ {body} }}, /* {CODEPOINTS[i]} */")
+    lines.append("};")
+    return "\n".join(lines)
+
+
+def emit_advances(name, advances):
+    body = ", ".join(str(value) for value in advances)
+    return f"const u8 {name}[{GLYPHS}] = {{ {body} }};"
+
+
+def emit_codepoints():
+    body = ", ".join(f"0x{cp:04X}u" for cp in CODEPOINTS)
+    return f"const u32 font_codepoints[{GLYPHS}] = {{ {body} }};"
+
+
+def raster_font():
+    # Native sizes only — never integer-scale glyphs at runtime (that pixels).
+    body_w, body_h, body_pt = 22, 28, 22
+    title_w, title_h, title_pt = 38, 48, 38
+    body, body_advances = raster_one(body_pt, body_w, body_h, CODEPOINTS)
+    title, title_advances = raster_one(title_pt, title_w, title_h, CODEPOINTS)
+
+    with open(FONT_H, "w", encoding="utf-8") as f:
+        f.write(
+            "#ifndef NUEVOOS_FONT_H\n"
+            "#define NUEVOOS_FONT_H\n\n"
+            "#include \"types.h\"\n\n"
+            f"#define FONT_WIDTH  {body_w}\n"
+            f"#define FONT_HEIGHT {body_h}\n"
+            f"#define FONT_LINE   (FONT_HEIGHT + 8u)\n"
+            f"#define FONT_TITLE_W  {title_w}\n"
+            f"#define FONT_TITLE_H  {title_h}\n"
+            f"#define FONT_GLYPHS {GLYPHS}\n\n"
+            f"/* 8-bit coverage + per-glyph advance. {FONT_NAME} (proportional). */\n"
+            f"extern const u32 font_codepoints[{GLYPHS}];\n"
+            f"extern const u8 font_advance[{GLYPHS}];\n"
+            f"extern const u8 font_title_advance[{GLYPHS}];\n"
+            f"extern const u8 font_alpha[{GLYPHS}][{body_w * body_h}];\n"
+            f"extern const u8 font_title_alpha[{GLYPHS}][{title_w * title_h}];\n\n"
+            "#endif\n"
+        )
+
+    parts = [
+        '#include "font.h"',
+        "",
+        f"/* Generated by tools/gen_ui_assets.py from {FONT_NAME}. */",
+        emit_codepoints(),
+        emit_advances("font_advance", body_advances),
+        emit_advances("font_title_advance", title_advances),
+        "",
+        emit_array("font_alpha", body, body_w, body_h),
+        "",
+        emit_array("font_title_alpha", title, title_w, title_h),
+        "",
+    ]
+    with open(FONT_C, "w", encoding="utf-8") as f:
+        f.write("\n".join(parts))
+    print("wrote", FONT_H, FONT_C, "body", body_w, "x", body_h, "title", title_w, "x", title_h)
+
+
+def main():
+    # Keep the default readable behind translucent UI. Pixel-art monitor art
+    # remains available through set_monitor_wallpaper.sh, but is not the
+    # normal desktop background.
+    if os.path.exists(os.path.join(BG_DIR, "dusk.jpg")):
+        default_src = "dusk.jpg"
+    elif os.path.exists(os.path.join(BG_DIR, "japan_street.jpg")):
+        default_src = "japan_street.jpg"
+    elif os.path.exists(os.path.join(BG_DIR, "sunset.jpg")):
+        default_src = "sunset.jpg"
+    elif os.path.exists(os.path.join(BG_DIR, "terminal_monitor.png")):
+        default_src = "terminal_monitor.png"
+    else:
+        default_src = "dusk.jpg"
+    convert_wallpaper(default_src, os.path.join(BG_DIR, "default.png"), make_rgb=True)
+    if os.path.exists(os.path.join(BG_DIR, "dusk.jpg")):
+        convert_wallpaper("dusk.jpg", os.path.join(BG_DIR, "dusk.png"), make_rgb=False)
+    if os.path.exists(os.path.join(BG_DIR, "pebbles.jpg")):
+        convert_wallpaper("pebbles.jpg", os.path.join(BG_DIR, "pebbles.png"), make_rgb=False)
+    raster_font()
+
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,56 @@
+[07:21:46] start pipe=cordos-wlan
+[07:21:46] waiting for guest
+[07:21:59] guest connected
+[07:22:25] scan 1 nets
+[07:22:31] connect 'SASHA' -> True
+[07:40:17] guest disconnected
+[07:40:18] waiting for guest
+[07:41:07] start pipe=cordos-wlan
+[07:41:07] waiting for guest
+[07:41:20] guest connected
+[07:41:54] scan 1 nets
+[07:41:57] connect 'SASHA' -> True
+[07:46:56] guest disconnected
+[07:46:56] waiting for guest
+[07:47:12] guest connected
+[07:47:31] scan 1 nets
+[07:47:39] connect 'SASHA' -> True
+[07:48:06] guest disconnected
+[07:48:06] waiting for guest
+[07:48:50] start pipe=cordos-wlan
+[07:48:50] waiting for guest
+[07:49:03] guest connected
+[07:52:14] scan 1 nets
+[07:52:25] connect 'SASHA' -> True
+[07:53:03] guest disconnected
+[07:53:04] waiting for guest
+[08:13:48] start pipe=cordos-wlan
+[08:13:48] waiting for guest
+[08:14:02] guest connected
+[08:14:20] scan 1 nets
+[08:14:26] connect 'SASHA' -> True
+[08:24:09] guest disconnected
+[08:24:09] waiting for guest
+[08:42:59] start pipe=cordos-wlan
+[08:42:59] waiting for guest
+[08:43:18] guest connected
+[08:43:34] guest disconnected
+[08:43:34] waiting for guest
+[08:59:55] start pipe=cordos-wlan
+[08:59:55] waiting for guest
+[09:00:14] guest connected
+[09:09:24] guest disconnected
+[09:09:24] waiting for guest
+[09:55:24] guest connected
+[09:58:27] guest disconnected
+[09:58:27] waiting for guest
+[12:16:21] start client pipe=cordos-wlan
+[12:16:21] connected to vbox
+[12:25:43] disconnected
+[12:25:55] connected to vbox
+[12:32:53] disconnected
+[12:33:05] connected to vbox
+[12:35:21] disconnected
+[12:35:35] connected to vbox
+[12:37:05] disconnected
+[12:41:31] connected to vbox

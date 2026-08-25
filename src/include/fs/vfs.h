@@ -1,0 +1,23 @@
+#ifndef NUEVOOS_VFS_H
+#define NUEVOOS_VFS_H
+
+#include "types.h"
+
+int vfs_open(const char *path);
+ssize_t vfs_read(int fd, void *buf, size_t len);
+ssize_t vfs_write(int fd, const void *buf, size_t len);
+int vfs_create(const char *path);
+int vfs_close(int fd);
+
+/* Print directory entries (basenames). Returns 0 or -1. */
+int vfs_ls(const char *path);
+
+/* Callback list of the overlay root (disk shadows initrd). */
+int vfs_list(const char *path,
+             void (*cb)(const char *name, u32 size, void *arg),
+             void *arg);
+
+/* Probe ATA, mount NOSF disk if present, else initrd. Then persist_init. */
+void phase6_init(void);
+
+#endif
