@@ -136,11 +136,11 @@ $gw = [int]$bounds.Width
 $gh = [int]$bounds.Height
 if ($gw -lt 640) { $gw = 640 }
 if ($gh -lt 400) { $gh = 400 }
-# Native pixels only: never larger than the wallpaper (1920x1080) or the host.
-if ($gw -gt 1920) { $gw = 1920 }
-if ($gh -gt 1080) { $gh = 1080 }
+# Guest = host native pixels (ultrawide, 1440p, 4K, 1366x768...).
+if ($gw -gt 7680) { $gw = 7680 }
+if ($gh -gt 4320) { $gh = 4320 }
 
-Write-Host "Pantalla host: $($bounds.Width)x$($bounds.Height) -> invitado 1:1 ${gw}x${gh} (sin escalar)"
+Write-Host "Pantalla host: $($bounds.Width)x$($bounds.Height) -> invitado 1:1 ${gw}x${gh}"
 
 $grubAuto = Join-Path $PSScriptRoot "kbuild\grub-auto.cfg"
 $grubDir = Join-Path $PSScriptRoot "kbuild"
@@ -180,7 +180,9 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 Write-Host "Ajustando VirtualBox a ${gw}x${gh} 1:1 (VBoxVGA / Bochs VBE, sin zoom)..."
-Invoke-VBoxSoft -VArgs @("modifyvm", $VmName, "--vram", "128")
+$vram = 128
+if (($gw * $gh) -gt (1920 * 1080)) { $vram = 256 }
+Invoke-VBoxSoft -VArgs @("modifyvm", $VmName, "--vram", "$vram")
 Invoke-VBoxSoft -VArgs @("modifyvm", $VmName, "--memory", "512")
 # VBoxSVGA is VMware SVGA; our kernel talks Bochs VBE DISPI. VBoxVGA honors
 # virt-width / pitch. SVGA ignored that and packed rows so x=-1 wrapped to

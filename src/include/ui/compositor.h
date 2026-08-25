@@ -10,6 +10,7 @@ void ui_comp_init(void);
 void ui_comp_scene_begin(void);
 void ui_comp_damage(u32 x, u32 y, u32 w, u32 h);
 void ui_comp_mark_full(void);
+bool ui_comp_is_full(void);
 bool ui_comp_has_damage(void);
 /* Copy damage (or the whole scene) then stamp the cursor on the LFB. */
 void ui_comp_present(void);

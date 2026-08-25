@@ -575,7 +575,7 @@ void fb_parse_cmdline(const void *mb2_addr)
             w = parse_u32(p + 4, &end);
             if (*end == 'x' || *end == 'X') {
                 h = parse_u32(end + 1, NULL);
-                if (w >= 640u && h >= 400u && w <= 3840u && h <= 2160u) {
+                if (w >= 640u && h >= 400u && w <= 7680u && h <= 4320u) {
                     fb_want_w = w;
                     fb_want_h = h;
                     serial_write("fb: cmdline gfx=");
@@ -593,22 +593,15 @@ void fb_parse_cmdline(const void *mb2_addr)
 
 static bool fb_upgrade_mode(void)
 {
-    static const u16 modes[][2] = {
-        { 1920, 1080 },
-        { 1600, 900 },
-        { 1366, 768 },
-        { 1280, 720 },
-        { 1024, 768 },
-    };
-    u32 i;
-
     if (!bga_available()) {
         serial_write("fb: Bochs VBE not present; keeping Multiboot mode\n");
         return false;
     }
 
-    if (fb_want_w != 0 && fb_want_h != 0) {
-        serial_write("fb: setting host-native mode via Bochs VBE\n");
+    /* Match the host/GRUB framebuffer. Never force 1920x1080. */
+    if (fb_want_w != 0 && fb_want_h != 0 &&
+        (fb_want_w != fb_w || fb_want_h != fb_h)) {
+        serial_write("fb: setting native mode via Bochs VBE\n");
         if (bga_try_mode((u16)fb_want_w, (u16)fb_want_h, 32)) {
             serial_write("fb: Bochs VBE set ");
             serial_print_u32(fb_w);
@@ -617,46 +610,8 @@ static bool fb_upgrade_mode(void)
             serial_write("\n");
             return true;
         }
+        serial_write("fb: native Bochs mode failed; keeping Multiboot\n");
     }
-
-    /*
-     * Multiboot often already hands us 1920x1080 with a tight pitch.
-     * That path used to return here, so the 1px clamp columns never
-     * installed — host filtering then shows wallpaper hairlines at the
-     * bottom left/right. Re-set the same mode to get the padded pitch.
-     */
-    if (fb_w >= 1920u && fb_h >= 1080u) {
-        if (bga_try_mode((u16)fb_w, (u16)fb_h, 32) && fb_x0 > 0) {
-            serial_write("fb: Bochs VBE clamp columns on ");
-            serial_print_u32(fb_w);
-            serial_write("x");
-            serial_print_u32(fb_h);
-            serial_write("\n");
-            return true;
-        }
-        return false;
-    }
-
-    serial_write("fb: upgrading via Bochs VBE...\n");
-    for (i = 0; i < sizeof(modes) / sizeof(modes[0]); ++i) {
-        if ((u32)modes[i][0] * (u32)modes[i][1] <= fb_w * fb_h) {
-            continue;
-        }
-        if (fb_want_w != 0 &&
-            ((u32)modes[i][0] > fb_want_w || (u32)modes[i][1] > fb_want_h)) {
-            continue;
-        }
-        if (bga_try_mode(modes[i][0], modes[i][1], 32)) {
-            serial_write("fb: Bochs VBE set ");
-            serial_print_u32(fb_w);
-            serial_write("x");
-            serial_print_u32(fb_h);
-            serial_write("\n");
-            return true;
-        }
-    }
-
-    serial_write("fb: Bochs VBE mode set failed\n");
     return false;
 }
 
@@ -725,9 +680,6 @@ void fb_init(const void *mb2_addr)
     (void)fb_upgrade_mode();
 
     bytes = (u64)fb_pitch_bytes * (u64)fb_h;
-    if (bytes < 1920ull * 1080ull * 4ull) {
-        bytes = 1920ull * 1080ull * 4ull;
-    }
     bytes += 0x200000ull;
     if (!fb_map_range(fb_phys, bytes)) {
         serial_write("fb: map failed\n");

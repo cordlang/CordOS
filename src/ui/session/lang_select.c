@@ -2,6 +2,7 @@
 #include "config.h"
 #include "draw.h"
 #include "fb.h"
+#include "metrics.h"
 #include "i18n.h"
 #include "keyboard.h"
 #include "keycodes.h"
@@ -70,10 +71,10 @@ static void lang_layout(struct lang_geom *g)
     u32 w = fb_width();
     u32 h = fb_height();
 
-    g->panel_w = (w >= 1440u) ? 640u : 480u;
-    g->panel_h = (h >= 700u) ? 360u : 300u;
-    g->button_y = (g->panel_h >= 340u) ? 88u : 64u;
-    g->button_h = (g->panel_h >= 340u) ? 56u : 48u;
+    g->panel_w = ui_content_w() + ui_px(80u);
+    g->panel_h = ui_px(360u);
+    g->button_y = ui_px(88u);
+    g->button_h = ui_px(56u);
 
     if (g->panel_w + 40u > w) {
         g->panel_w = w > 40u ? w - 40u : w;

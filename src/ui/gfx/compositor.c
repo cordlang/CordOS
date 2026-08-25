@@ -107,6 +107,11 @@ void ui_comp_mark_full(void)
     s_full = true;
 }
 
+bool ui_comp_is_full(void)
+{
+    return s_full;
+}
+
 bool ui_comp_has_damage(void)
 {
     return s_full || s_damage.on;

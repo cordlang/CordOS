@@ -4,6 +4,7 @@
 #include "compositor.h"
 #include "draw.h"
 #include "fb.h"
+#include "metrics.h"
 #include "widget.h"
 #include "font.h"
 #include "i18n.h"
@@ -41,11 +42,11 @@ enum ob_step {
 
 #define NAME_MAX 24u
 #define PASS_MAX 32u
-#define FIELD_H  34u
-#define PLACE_H  16u
-#define ROW_H    44u
-#define ROW_GAP  10u
-#define BTN_H    38u
+#define FIELD_H  ui_px(34u)
+#define PLACE_H  ui_px(16u)
+#define ROW_H    ui_px(44u)
+#define ROW_GAP  ui_px(10u)
+#define BTN_H    ui_px(38u)
 #define LOGO     BRAND_LOGIN_W
 
 static const struct rgb OB_WHITE = { 0xF7, 0xF8, 0xFA };
@@ -223,11 +224,11 @@ static void ob_layout(struct ob_geom *g, enum ob_step step)
     u32 stack;
 
     g->cx = w / 2u;
-    g->cw = (w >= 1100u) ? 420u : ((w >= 800u) ? 360u : (w > 64u ? w - 64u : w));
-    g->x0 = (w > g->cw) ? (w - g->cw) / 2u : 8u;
+    g->cw = ui_content_w();
+    g->x0 = (w > g->cw) ? (w - g->cw) / 2u : ui_margin();
     g->btn_h = BTN_H;
-    g->btn_w = 160u;
-    g->wifi_rows = (h >= 900u) ? 4u : 3u;
+    g->btn_w = ui_px(160u);
+    g->wifi_rows = (h >= 1440u) ? 5u : ((h >= 900u) ? 4u : ((h >= 700u) ? 3u : 2u));
     g->content_h = ob_content_h(step);
 
     /* Logo → dots → title → body → fields → buttons, as one block. */
@@ -249,7 +250,7 @@ static void ob_layout(struct ob_geom *g, enum ob_step step)
     }
 }
 
-#define BTN_GAP 16u
+#define BTN_GAP ui_gap()
 
 static u32 net_count(void);
 static bool net_is_eth(u32 index);
@@ -370,7 +371,8 @@ static bool net_needs_pass(u32 index)
 
 static u32 wifi_visible(u32 index)
 {
-    u32 rows = (fb_height() >= 900u) ? 4u : 3u;
+    u32 h = fb_height();
+    u32 rows = (h >= 1440u) ? 5u : ((h >= 900u) ? 4u : ((h >= 700u) ? 3u : 2u));
 
     return net_needs_pass(index) ? (rows > 1u ? rows - 1u : 1u) : rows;
 }
@@ -728,10 +730,7 @@ static void draw_step(enum ob_step step, u32 hit, u32 lang_focus, bool field_on,
     }
 
     (void)hit;
-    if (show_cursor) {
-        ui_comp_mark_full();
-        ui_comp_present();
-    }
+    (void)show_cursor;
 }
 
 static u32 ob_hit(enum ob_step step, i32 mx, i32 my, u32 lang_focus)
@@ -928,7 +927,7 @@ static void ob_enter(enum ob_step step, u32 hover, u32 lang_focus, bool field_on
     if (s_fade_from != NULL) {
         ui_crossfade_from(s_fade_from);
     }
-    cursor_flip((u32)mouse_x(), (u32)mouse_y());
+    ui_invalidate();
 }
 
 static void commit_user(void)
@@ -1025,7 +1024,8 @@ void onboarding_run(bool ask_lang)
         }
 
         if (!first && step == prev && step == OB_WIFI && !s_scanned) {
-            draw_step(step, hover, lang_focus, field_on, true);
+            draw_step(step, hover, lang_focus, field_on, false);
+            ui_invalidate();
             (void)wlan_scan();
             s_scanned = true;
             s_net = 0;
@@ -1036,7 +1036,8 @@ void onboarding_run(bool ask_lang)
 
         if (!first && step == prev && step == OB_CHECK && s_checking) {
             if (s_check_t == 0u) {
-                draw_step(step, hover, lang_focus, field_on, true);
+                draw_step(step, hover, lang_focus, field_on, false);
+                ui_invalidate();
                 s_net_ok = ob_probe_link();
             }
             wait_ms(70u);
@@ -1175,7 +1176,7 @@ void onboarding_run(bool ask_lang)
         } else if (dirty) {
             ui_comp_scene_begin();
             draw_step(step, hover, lang_focus, field_on, false);
-            ui_comp_mark_full();
+            ui_invalidate();
             dirty = false;
         }
 

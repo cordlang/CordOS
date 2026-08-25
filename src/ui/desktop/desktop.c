@@ -4,6 +4,7 @@
 #include "config.h"
 #include "draw.h"
 #include "fb.h"
+#include "metrics.h"
 #include "widget.h"
 #include "font.h"
 #include "i18n.h"
@@ -22,19 +23,19 @@
 #include "wallpaper.h"
 #include "net.h"
 
-#define DOCK_M     18u
-#define DOCK_H     66u
-#define DOCK_SLOT  56u
-#define DOCK_PADX  18u
+#define DOCK_M     ui_px(18u)
+#define DOCK_H     ui_px(66u)
+#define DOCK_SLOT  ui_px(56u)
+#define DOCK_PADX  ui_px(18u)
 #define DOCK_APPS  5u
-#define DOCK_ICON  40u
-#define DESK_TOP   118u
-#define STAT_H     36u
-#define TITLE_H    48u
-#define MENU_ROW    (FONT_HEIGHT + 16u)
-#define MENU_INSET  10u
-#define CTX_HEADER  34u
-#define CTX_SEP     8u
+#define DOCK_ICON  ui_px(40u)
+#define DESK_TOP   ui_px(118u)
+#define STAT_H     ui_px(36u)
+#define TITLE_H    ui_px(48u)
+#define MENU_ROW    ui_px(44u)
+#define MENU_INSET  ui_px(10u)
+#define CTX_HEADER  ui_px(34u)
+#define CTX_SEP     ui_px(8u)
 #define FILE_ROW   FONT_LINE
 #define MAX_WIN    4
 #define MAX_FILES  8
@@ -65,11 +66,11 @@
 #define HIT_CTX      0xA00u
 #define HIT_DOCK     0xB00u
 #define HIT_STATUS   0xC00u
-#define WP_THUMB_W   200u
-#define WP_THUMB_H   112u
-#define WP_THUMB_GAP 18u
-#define IC_THUMB     64u
-#define IC_THUMB_GAP 14u
+#define WP_THUMB_W   ui_px(200u)
+#define WP_THUMB_H   ui_px(112u)
+#define WP_THUMB_GAP ui_px(18u)
+#define IC_THUMB     ui_px(64u)
+#define IC_THUMB_GAP ui_px(14u)
 
 static const struct rgb DESK_WHITE = { 0xF7, 0xF8, 0xFA };
 static const struct rgb DESK_MUTED = { 0xC4, 0xC8, 0xD0 };
@@ -710,10 +711,10 @@ static void icon_geom(u32 i, u32 *x, u32 *y, u32 *w, u32 *h)
 {
     u32 sw = fb_width();
     u32 sh = fb_height();
-    u32 cell_w = 128u;
-    u32 cell_h = 108u;
-    u32 gap = 28u;
-    u32 cols = (sw >= 780u) ? ICON_COUNT : 2u;
+    u32 cell_w = ui_px(128u);
+    u32 cell_h = ui_px(108u);
+    u32 gap = ui_px(28u);
+    u32 cols = (sw >= ui_px(780u)) ? ICON_COUNT : 2u;
     u32 rows = (ICON_COUNT + cols - 1u) / cols;
     u32 grid_w = cols * cell_w + (cols - 1u) * gap;
     u32 grid_h = rows * cell_h + (rows - 1u) * gap;
@@ -1783,6 +1784,7 @@ void desktop_run(void)
 
         if (dirty) {
             desktop_redraw();
+            ui_invalidate();
             dirty = false;
         }
         if (desktop_widgets()) {

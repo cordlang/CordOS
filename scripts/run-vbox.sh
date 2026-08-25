@@ -60,8 +60,8 @@ if command -v xrandr >/dev/null 2>&1; then
 fi
 GW=$HOST_W
 GH=$HOST_H
-[ "$GW" -gt 1920 ] && GW=1920
-[ "$GH" -gt 1080 ] && GH=1080
+[ "$GW" -gt 7680 ] && GW=7680
+[ "$GH" -gt 4320 ] && GH=4320
 [ "$GW" -lt 640 ] && GW=640
 [ "$GH" -lt 400 ] && GH=400
 echo "Pantalla host: ${HOST_W}x${HOST_H} -> invitado 1:1 ${GW}x${GH}"

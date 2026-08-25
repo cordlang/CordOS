@@ -9,6 +9,8 @@ void ui_end(void);
 bool ui_busy(void);
 bool ui_took_click(void);
 void ui_want_full(void);
+/* Chrome was redrawn; widgets must stamp again before present. */
+void ui_invalidate(void);
 
 bool ui_button(u32 id, u32 x, u32 y, u32 w, u32 h, const char *label,
                bool selected, bool enabled);

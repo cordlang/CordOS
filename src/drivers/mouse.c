@@ -167,8 +167,8 @@ void mouse_init(void)
     s_x = 200;
     s_y = 150;
     s_buttons = 0;
-    s_w = 1920;
-    s_h = 1080;
+    s_w = 0;
+    s_h = 0;
     s_index = 0;
     s_head = 0;
     s_tail = 0;

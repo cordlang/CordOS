@@ -64,14 +64,14 @@ Definición provisional hasta reemplazar `temporal`. Elegimos una dirección **c
 
 ### 2.3 Motion (presencia, no ruido)
 
-Solo 2–3 gestos de sistema:
+El plan de **animación, fluidez y presupuesto de RAM/CPU** (estación de juegos + desarrollo) está en [`VISUAL_ROADMAP.md`](VISUAL_ROADMAP.md). Aquí el mínimo de identidad:
 
 1. **Fade + lift** suave al pasar splash → **login** (200–320 ms).
 2. **Foco** que respira en el campo/botón seleccionado (opacidad/borde accent).
 3. **Abrir superficie** (panel o ventana desde Home) con slide corto desde un borde.
 4. **Login → Home**: crossfade corto tras autenticación OK.
 
-Sin glow excesivo, sin partículas, sin parallax en boot.
+Sin glow excesivo, sin partículas, sin parallax en boot. Sin demonios de fondo para animar.
 
 ### 2.4 Branding en primer viewport
 

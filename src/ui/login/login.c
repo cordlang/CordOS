@@ -6,6 +6,7 @@
 #include "desktop.h"
 #include "draw.h"
 #include "fb.h"
+#include "metrics.h"
 #include "widget.h"
 #include "font.h"
 #include "i18n.h"
@@ -23,10 +24,10 @@
 #define LOGIN_PASS_MAX 32
 #define DEV_PASS "admin"
 #define LOGIN_LOGO   BRAND_LOGIN_W
-#define LOGIN_PASS_W 240u
-#define LOGIN_PASS_H 34u
-#define LOGIN_GO     22u
-#define LOGIN_POWER  36u
+#define LOGIN_PASS_W ui_px(240u)
+#define LOGIN_PASS_H ui_px(34u)
+#define LOGIN_GO     ui_px(22u)
+#define LOGIN_POWER  ui_px(36u)
 #define HIT_NONE     0xFFu
 #define HIT_PASS     1u
 #define HIT_GO       2u
@@ -37,7 +38,7 @@ static const struct rgb LOGIN_WHITE = { 0xF7, 0xF8, 0xFA };
 static const struct rgb LOGIN_MUTED = { 0xC4, 0xC8, 0xD0 };
 static const struct rgb LOGIN_INK   = { 0x1A, 0x1A, 0x1C };
 static const struct rgb LOGIN_GLASS = { 0x1C, 0x24, 0x30 };
-#define LOGIN_PLACE_H 16u
+#define LOGIN_PLACE_H ui_px(16u)
 
 struct login_draw {
     const char *pass;
@@ -265,11 +266,13 @@ static void login_layout(struct login_geom *g)
     u32 avail;
 
     g->cx = w / 2u;
-    g->pass_w = (w > LOGIN_PASS_W + 80u) ? LOGIN_PASS_W :
-                (w > 80u ? w - 80u : w);
+    g->pass_w = LOGIN_PASS_W;
+    if (g->pass_w + ui_margin() * 2u > w) {
+        g->pass_w = (w > ui_margin() * 2u) ? (w - ui_margin() * 2u) : w;
+    }
     g->pass_h = LOGIN_PASS_H;
 
-    g->date_y = (h >= 900u) ? (h / 9u) : ((h >= 720u) ? 40u : 12u);
+    g->date_y = (h >= 900u) ? (h / 9u) : ((h >= 720u) ? ui_px(40u) : ui_px(12u));
     g->clock_y = g->date_y + FONT_HEIGHT + 6u;
     clock_bottom = g->clock_y + FONT_TITLE_H + 20u;
 

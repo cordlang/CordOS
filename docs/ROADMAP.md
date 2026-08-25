@@ -39,7 +39,8 @@ Windows: se construye desde cero como sistema freestanding.
 
 **Futuro (backlog, no bloquea uso actual)**
 
-- UI de producto: [`docs/UI_PLAN.md`](docs/UI_PLAN.md) — **Ola 0** (splash → login → Home) en `src/ui/session.c`
+- UI de producto: [`docs/UI_PLAN.md`](docs/UI_PLAN.md) — splash → login → Home
+- Visual, motion y rendimiento (juegos + dev): [`docs/VISUAL_ROADMAP.md`](VISUAL_ROADMAP.md)
 - Ring 3 + userland completo
 - ATA + nosfs en disco
 - Red / SMP AP / GUI avanzada (compositor)

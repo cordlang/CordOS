@@ -8,6 +8,7 @@
 
 #define UI_MAX 48u
 #define UI_HOVER_STEP 48u
+#define UI_IDLE 40u
 
 static const struct rgb W_GLASS = { 0x1C, 0x24, 0x30 };
 static const struct rgb W_WHITE = { 0xF7, 0xF8, 0xFA };
@@ -138,7 +139,7 @@ static bool run_visual(struct ui_item *it, u32 x, u32 y, u32 w, u32 h,
     u8 prev;
     u8 next;
 
-    it->target = selected ? 255u : (hot ? 255u : 0);
+    it->target = selected ? 255u : (hot ? 255u : UI_IDLE);
     prev = it->hover;
     next = approach(prev, it->target);
     it->hover = next;
@@ -169,7 +170,7 @@ void ui_begin(i32 mx, i32 my, u8 buttons, u32 now_ms)
     s_click = false;
     s_pointer = false;
     s_busy = false;
-    s_want_full = false;
+    s_want_full = ui_comp_is_full();
     s_begun = true;
     for (i = 0; i < s_n; ++i) {
         s_items[i].used = false;
@@ -178,6 +179,17 @@ void ui_begin(i32 mx, i32 my, u8 buttons, u32 now_ms)
 
 void ui_want_full(void)
 {
+    s_want_full = true;
+    ui_comp_mark_full();
+}
+
+void ui_invalidate(void)
+{
+    u32 i;
+
+    for (i = 0; i < s_n; ++i) {
+        s_items[i].shown = false;
+    }
     s_want_full = true;
     ui_comp_mark_full();
 }
@@ -221,7 +233,7 @@ bool ui_button(u32 id, u32 x, u32 y, u32 w, u32 h, const char *label,
 
     painted = run_visual(it, x, y, w, h, hot, selected);
     if (!enabled) {
-        it->target = 24u;
+        it->target = UI_IDLE / 2u;
     }
     if (painted) {
         paint_label(x, y, w, h, label);
