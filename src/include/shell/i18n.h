@@ -108,6 +108,7 @@ void i18n_set_lang(enum lang_id lang);
 enum lang_id i18n_lang(void);
 const char *i18n_lang_name(enum lang_id lang);
 const char *i18n(enum msg_id id);
+const char *i18n_month_abbr(u8 month_1_12);
 
 /* Optional: "es", "en", "es-ES", "en-US" → true if applied. */
 bool i18n_set_lang_code(const char *code);

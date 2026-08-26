@@ -73,8 +73,11 @@ static u8 s_enter;
 static u32 s_enter_anim_ms;
 static bool s_caret;
 static bool s_light;
+static bool s_light_locked;
 static u8 *s_fade_from;
 static u32 s_check_elapsed;
+struct ob_geom;
+static void ob_sync_light(const struct ob_geom *g);
 
 static void wait_ms(u32 ms)
 {
@@ -175,6 +178,24 @@ static void ob_layout(struct ob_geom *g, enum ob_step step)
     if (g->btn_y + g->btn_h + 12u > h) {
         g->btn_y = (h > g->btn_h + 12u) ? (h - g->btn_h - 12u) : 0;
     }
+}
+
+static void ob_sync_light(const struct ob_geom *g)
+{
+    if (!s_light_locked) {
+        u32 band_y = g->title_y;
+        u32 band_h;
+
+        band_h = (g->content_y > g->title_y) ? (g->content_y - g->title_y + FONT_HEIGHT)
+                                             : 160u;
+        if (band_h < 96u) {
+            band_h = 96u;
+        }
+        s_light = draw_region_is_light(g->x0, band_y, g->cw, band_h);
+        s_light_locked = true;
+    }
+    draw_set_ui_light(s_light);
+    cursor_set_on_light(s_light);
 }
 
 #define BTN_GAP ui_gap()
@@ -467,7 +488,7 @@ static void ob_draw_glass_pill(u32 x, u32 y, u32 w, u32 h, u8 focus)
 {
     u8 glass_a = mix_u8(38u, 86u, focus);
     u8 rim_a = mix_u8(16u, 64u, focus);
-    struct rgb rim = draw_region_is_light(x, y, w, h) ? OB_INK : OB_WHITE;
+    struct rgb rim = draw_ui_is_light() ? OB_INK : OB_WHITE;
 
     draw_round_fill(x > 0 ? x - 1u : 0, y > 0 ? y - 1u : 0, w + 2u, h + 2u,
                     (h + 2u) / 2u, rim, rim_a);
@@ -543,9 +564,7 @@ static void draw_step(enum ob_step step, u32 hit, u32 lang_focus, bool field_on,
     fb_compose_begin();
     draw_bg_login();
     fb_overlay(4, 10, 22, 22u);
-
-    s_light = draw_region_is_light(g.x0, g.logo_y, g.cw, 180u);
-    cursor_set_on_light(s_light);
+    ob_sync_light(&g);
 
     ob_draw_logo(g.logo_x, g.logo_y);
     ob_draw_dots(&g, step);
@@ -870,7 +889,7 @@ static void commit_user(void)
     fb_compose_begin();
     draw_bg_login();
     fb_overlay(4, 10, 22, 22u);
-    s_light = draw_region_is_light(g.x0, g.logo_y, g.cw, 180u);
+    ob_sync_light(&g);
     ob_draw_logo(g.logo_x, g.logo_y);
     tw = draw_text_width(i18n(MSG_OB_CREATING), 1);
     tx = (fb_width() > tw) ? (fb_width() - tw) / 2u : g.x0;
@@ -896,6 +915,7 @@ void onboarding_run(bool ask_lang)
     bool first = true;
 
     s_ask_lang = ask_lang;
+    s_light_locked = false;
     s_name[0] = '\0';
     s_nlen = 0;
     s_pass[0] = '\0';

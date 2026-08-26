@@ -405,6 +405,7 @@ static void paint_login_screen(const struct login_draw *d)
         bool time_light = draw_region_is_light(band_x, g.date_y, band_w, band_h);
         struct rgb chrome = time_light ? LOGIN_INK : LOGIN_WHITE;
 
+        draw_set_ui_light(time_light);
         cursor_set_on_light(time_light);
         draw_login_label(dx, g.date_y, date, 1, time_light);
         draw_login_label(cx, g.clock_y, clock, 2, time_light);
@@ -425,8 +426,7 @@ static void paint_login_screen(const struct login_draw *d)
                         g.pass_y > 0u ? g.pass_y - 1u : 0u,
                         g.pass_w + 2u, g.pass_h + 2u,
                         (g.pass_h + 2u) / 2u,
-                        draw_region_is_light(pass_x, g.pass_y, g.pass_w, g.pass_h)
-                            ? LOGIN_INK : LOGIN_WHITE,
+                        draw_ui_is_light() ? LOGIN_INK : LOGIN_WHITE,
                         rim_a);
         draw_glass(pass_x, g.pass_y, g.pass_w, g.pass_h, g.pass_h / 2u, tint, glass_a);
         if (g.pass_w > 24u) {
@@ -454,8 +454,7 @@ static void paint_login_screen(const struct login_draw *d)
             draw_round_fill(go_x > 0 ? go_x - 1u : 0,
                             g.go_y > 0 ? g.go_y - 1u : 0,
                             LOGIN_GO + 2u, LOGIN_GO + 2u, (LOGIN_GO + 2u) / 2u,
-                            draw_region_is_light(go_x, g.go_y, LOGIN_GO, LOGIN_GO)
-                                ? LOGIN_INK : LOGIN_WHITE,
+                            draw_ui_is_light() ? LOGIN_INK : LOGIN_WHITE,
                             rim_a);
             draw_glass(go_x, g.go_y, LOGIN_GO, LOGIN_GO, LOGIN_GO / 2u, tint, go_a);
             draw_go_arrow(go_x + LOGIN_GO / 2u, g.go_y + LOGIN_GO / 2u, chrome);
@@ -465,9 +464,7 @@ static void paint_login_screen(const struct login_draw *d)
                         g.power_y > 0 ? g.power_y - 1u : 0,
                         LOGIN_POWER + 2u, LOGIN_POWER + 2u,
                         (LOGIN_POWER + 2u) / 2u,
-                        draw_region_is_light(g.power_x, g.power_y,
-                                             LOGIN_POWER, LOGIN_POWER)
-                            ? LOGIN_INK : LOGIN_WHITE,
+                        draw_ui_is_light() ? LOGIN_INK : LOGIN_WHITE,
                         d->power_hot ? 70u : 22u);
         draw_glass(g.power_x, g.power_y, LOGIN_POWER, LOGIN_POWER,
                    LOGIN_POWER / 2u, tint, d->power_hot ? 92u : 56u);

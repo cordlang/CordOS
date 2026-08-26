@@ -121,12 +121,25 @@ static u8 s_last_month = 0xFFu;
 static u16 s_last_year = 0xFFFFu;
 static u32 s_widget_last_hover = HIT_NONE;
 static bool s_widget_repaint_base;
+static u32 s_last_click_hit = HIT_NONE;
+static u32 s_last_click_ms;
 
 static void settings_layout(const struct window *w, u32 *lang_y, u32 *wp_y,
                             u32 *ic_y);
 static u32 hit_test(i32 px, i32 py);
 static enum cursor_kind desktop_cursor_kind(u32 hit);
 static void desktop_redraw(void);
+
+static bool is_double_click(u32 hit)
+{
+    const u32 dbl_ms = 350u;
+    u32 now = time_uptime_ms();
+    bool dbl = (hit == s_last_click_hit) && (now - s_last_click_ms) <= dbl_ms;
+
+    s_last_click_hit = hit;
+    s_last_click_ms = now;
+    return dbl;
+}
 
 static int streq(const char *a, const char *b)
 {
@@ -177,14 +190,6 @@ static bool in_rect(i32 px, i32 py, i32 x, i32 y, i32 w, i32 h)
 
 static void date_refresh(u8 day, u8 mon)
 {
-    static const char es_m[12][4] = {
-        "ene", "feb", "mar", "abr", "may", "jun",
-        "jul", "ago", "sep", "oct", "nov", "dic"
-    };
-    static const char en_m[12][4] = {
-        "Jan", "Feb", "Mar", "Apr", "May", "Jun",
-        "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"
-    };
     const char *mn;
 
     if (day < 1u || day > 31u) {
@@ -193,7 +198,7 @@ static void date_refresh(u8 day, u8 mon)
     if (mon < 1u || mon > 12u) {
         mon = 1;
     }
-    mn = (i18n_lang() == LANG_ES) ? es_m[mon - 1u] : en_m[mon - 1u];
+    mn = i18n_month_abbr(mon);
     if (i18n_lang() == LANG_ES) {
         s_date[0] = (char)('0' + (day / 10u));
         s_date[1] = (char)('0' + (day % 10u));
@@ -277,20 +282,6 @@ static bool clock_changed(void)
     return true;
 }
 
-static i32 desktop_cursor_x(void)
-{
-    i32 x = mouse_x() - 4;
-
-    return x < 0 ? 0 : x;
-}
-
-static i32 desktop_cursor_y(void)
-{
-    i32 y = mouse_y() - 4;
-
-    return y < 0 ? 0 : y;
-}
-
 static bool s_cursor_valid;
 static i32 s_cursor_x;
 static i32 s_cursor_y;
@@ -314,8 +305,6 @@ static void desktop_cursor_update(bool scene_is_back)
     hit = hit_test(mx, my);
     kind = desktop_cursor_kind(hit);
     cursor_set_kind(kind);
-    cursor_set_on_light(draw_region_is_light((u32)desktop_cursor_x(),
-                                             (u32)desktop_cursor_y(), 8u, 8u));
     s_cursor_x = mx;
     s_cursor_y = my;
     s_cursor_valid = true;
@@ -977,7 +966,7 @@ static void draw_desktop_icons(void)
         bool light;
         struct rgb label;
         icon_geom(i, &x, &y, &w, &h);
-        light = draw_region_is_light(x, y + h - 28u, w, 24u);
+        light = draw_ui_is_light();
         label = hot ? THEME_ACCENT : (light ? DESK_INK : DESK_WHITE);
         if (hot) {
             draw_glass(x, y, w, h > 24u ? h - 24u : h, 18, THEME_GLASS, 64u);
@@ -1065,9 +1054,9 @@ static void draw_win_body(struct window *w, u32 id)
         draw_text(bx + 24, by + TITLE_H + 16u, i18n(MSG_SETTINGS_BODY), THEME_FG, 1);
         draw_text(bx + 24, by + TITLE_H + 16u + FONT_LINE, i18n(MSG_LANG_CLICK),
                   THEME_FG_DIM, 1);
-        draw_button(bx + 24, lang_y, 140, 40, "Español",
+        draw_button(bx + 24, lang_y, 140, 40, i18n_lang_name(LANG_ES),
                     i18n_lang() == LANG_ES || s_hover == HIT_LANG_ES);
-        draw_button(bx + 180, lang_y, 140, 40, "English",
+        draw_button(bx + 180, lang_y, 140, 40, i18n_lang_name(LANG_EN),
                     i18n_lang() == LANG_EN || s_hover == HIT_LANG_EN);
         draw_text(bx + 24, lang_y + 52u, i18n_lang_name(i18n_lang()), THEME_ACCENT, 1);
         draw_text(bx + 24, wp_y - FONT_LINE, i18n(MSG_SETTINGS_WP), THEME_FG, 1);
@@ -1137,7 +1126,7 @@ static void draw_status(void)
     struct rgb icon_col;
 
     status_geom(&sx, &sy, &sw, &sh);
-    light = draw_region_is_light(sx, sy, sw, sh);
+    light = draw_ui_is_light();
     icon_col = light ? DESK_INK : DESK_WHITE;
     draw_glass(sx, sy, sw, sh, sh / 2u, THEME_GLASS, hot ? 90u : 70u);
     draw_round_fill(sx + 2u, sy + 2u, sw - 4u, sh / 3u, sh / 2u, sheen, 22u);
@@ -1344,11 +1333,12 @@ static void paint_desktop_base(void)
     draw_bg_atmosphere();
     fb_overlay(THEME_BG0.r, THEME_BG0.g, THEME_BG0.b, 18u);
     light = draw_region_is_light(band_x, 16u, band_w + 8u, 88u);
+    draw_set_ui_light(light);
+    cursor_set_on_light(light);
     ink = light ? DESK_INK : DESK_WHITE;
     muted = light ? THEME_TITLE : DESK_MUTED;
     if (w > 720u) {
-        bool mark_light = draw_region_is_light(16u, 16u, 120u, 36u);
-        draw_text(24u, 22u, name_os, mark_light ? DESK_INK : DESK_MUTED, 1);
+        draw_text(24u, 22u, name_os, light ? DESK_INK : DESK_MUTED, 1);
     }
     draw_text_centered(w / 2u, 18u, s_clock, ink, 2);
     draw_text_centered(w / 2u, 18u + FONT_HEIGHT * 2u + 4u, s_date, muted, 1);
@@ -1395,7 +1385,7 @@ static void power_halt(void)
     machine_power_off();
 }
 
-static void handle_click(u32 hit)
+static void handle_click(u32 hit, bool dbl)
 {
     if (hit >= HIT_CTX && hit < HIT_CTX + CTX_COUNT) {
         u32 item = hit - HIT_CTX;
@@ -1419,11 +1409,15 @@ static void handle_click(u32 hit)
         return;
     }
     if (hit >= HIT_DOCK && hit < HIT_DOCK + ICON_COUNT) {
-        action_open(hit - HIT_DOCK);
+        if (dbl) {
+            action_open(hit - HIT_DOCK);
+        }
         return;
     }
     if (hit >= HIT_ICON && hit < HIT_ICON + ICON_COUNT) {
-        action_open(hit - HIT_ICON);
+        if (dbl) {
+            action_open(hit - HIT_ICON);
+        }
         return;
     }
     if (hit >= HIT_CLOSE && hit < HIT_CLOSE + MAX_WIN) {
@@ -1638,8 +1632,13 @@ static bool desktop_widgets(void)
                 need_full = true;
             } else {
                 s_menu = false;
-                action_open(i - 1u);
-                need_full = true;
+                if (is_double_click(HIT_DOCK + (i - 1u))) {
+                    action_open(i - 1u);
+                    need_full = true;
+                } else {
+                    s_hover = HIT_DOCK + (i - 1u);
+                    need_full = true;
+                }
             }
         }
     }
@@ -1764,9 +1763,10 @@ void desktop_run(void)
                     }
                 }
             } else if (ev.kind == MOUSE_EV_DOWN && ev.button == MOUSE_LEFT) {
+                bool dbl = is_double_click(hit);
                 s_hover = hit;
                 if (!desk_chrome_hit(hit)) {
-                    handle_click(hit);
+                    handle_click(hit, dbl);
                     dirty = true;
                 }
             } else if (ev.kind == MOUSE_EV_DOWN && ev.button == MOUSE_RIGHT) {

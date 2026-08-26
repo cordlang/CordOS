@@ -45,10 +45,10 @@ static const char *const strings_es[MSG_COUNT] = {
     [MSG_WP_DEFAULT] = "Predeterminado",
     [MSG_WP_ABSTRACT] = "Abstracto",
     [MSG_SETTINGS_ICONS] = "Estilo de iconos",
-    [MSG_IC_LINEAR] = "Linear",
-    [MSG_IC_BOLD] = "Bold",
-    [MSG_IC_BROKEN] = "Broken",
-    [MSG_IC_BULK] = "Bulk",
+    [MSG_IC_LINEAR] = "Lineal",
+    [MSG_IC_BOLD] = "Negrita",
+    [MSG_IC_BROKEN] = "Roto",
+    [MSG_IC_BULK] = "Macizo",
     [MSG_POWER_MSG] = "Apagando...",
     [MSG_SHELL_EXIT_HINT] = "exit vuelve al escritorio.",
     [MSG_LAUNCHER] = "Menú",
@@ -221,6 +221,26 @@ const char *i18n(enum msg_id id)
         return strings_en[id];
     }
     return strings_es[id];
+}
+
+const char *i18n_month_abbr(u8 month_1_12)
+{
+    static const char *const es_m[12] = {
+        "ene", "feb", "mar", "abr", "may", "jun",
+        "jul", "ago", "sep", "oct", "nov", "dic"
+    };
+    static const char *const en_m[12] = {
+        "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+        "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"
+    };
+
+    if (month_1_12 < 1u || month_1_12 > 12u) {
+        return "?";
+    }
+    if (lang_os == LANG_EN) {
+        return en_m[month_1_12 - 1u];
+    }
+    return es_m[month_1_12 - 1u];
 }
 
 bool i18n_set_lang_code(const char *code)

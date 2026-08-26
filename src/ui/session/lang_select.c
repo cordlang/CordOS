@@ -104,6 +104,11 @@ static void draw_picker_gfx(u32 focus)
 
     fb_compose_begin();
     draw_bg_frosted();
+    {
+        bool light = draw_region_is_light(g.px, g.py, g.panel_w, g.panel_h);
+        draw_set_ui_light(light);
+        cursor_set_on_light(light);
+    }
     brand_w = draw_text_width(name_os, title_scale);
     draw_text((w > brand_w) ? (w - brand_w) / 2u : 20,
               g.py > 72u ? g.py - 72u : 16,

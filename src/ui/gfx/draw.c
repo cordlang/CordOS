@@ -16,6 +16,17 @@ static bool s_frost_ok;
 static u32 s_login_wp;
 static u32 s_desk_wp;
 static u32 s_icon_style = ICON_STYLE_BOLD;
+static bool s_ui_light;
+
+void draw_set_ui_light(bool on_light)
+{
+    s_ui_light = on_light;
+}
+
+bool draw_ui_is_light(void)
+{
+    return s_ui_light;
+}
 
 static u32 clamp_rad(u32 w, u32 h, u32 rad)
 {
@@ -1458,7 +1469,7 @@ void draw_field(u32 x, u32 y, u32 w, u32 h, const char *text, bool password,
     u32 tx;
     u32 ty;
     u32 rad = h / 2u > THEME_RAD_FIELD ? THEME_RAD_FIELD : h / 2u;
-    bool light = draw_region_is_light(x, y, w, h);
+    bool light = draw_ui_is_light();
     struct rgb border = light ? (struct rgb){ 0x1A, 0x1A, 0x1C }
                               : (struct rgb){ 0xF7, 0xF8, 0xFA };
 
@@ -1502,7 +1513,7 @@ void draw_button(u32 x, u32 y, u32 w, u32 h, const char *label, bool focused)
     u32 tx;
     u32 ty;
     u32 rad = h < THEME_RAD_BTN * 2u ? h / 2u : THEME_RAD_BTN;
-    bool light = draw_region_is_light(x, y, w, h);
+    bool light = draw_ui_is_light();
     struct rgb border = light ? (struct rgb){ 0x1A, 0x1A, 0x1C }
                               : (struct rgb){ 0xF7, 0xF8, 0xFA };
 

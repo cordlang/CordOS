@@ -111,7 +111,7 @@ static void paint_glass(u32 x, u32 y, u32 w, u32 h, u8 focus, u8 press)
     u32 pw = (w > inset * 2u) ? (w - inset * 2u) : w;
     u32 ph = (h > inset * 2u) ? (h - inset * 2u) : h;
     u32 rad = ph / 2u;
-    struct rgb rim = draw_region_is_light(x, y, w, h)
+    struct rgb rim = draw_ui_is_light()
                          ? (struct rgb){ 0x1A, 0x1A, 0x1C }
                          : W_WHITE;
 
@@ -412,7 +412,7 @@ bool ui_icon_btn(u32 id, u32 x, u32 y, u32 w, u32 h, enum ui_icon icon,
         i32 bg_y = (i32)y + yoff;
         i32 icon_y = (i32)(y + (h > isz ? (h - isz) / 2u : 0)) + yoff;
         i32 dot_y = (i32)(y + h - 11u) + yoff;
-        struct rgb rim = draw_region_is_light(x, y, w, h)
+        struct rgb rim = draw_ui_is_light()
                              ? (struct rgb){ 0x1A, 0x1A, 0x1C }
                              : W_WHITE;
 
