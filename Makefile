@@ -12,7 +12,7 @@ INC := -Isrc/include \
 	-Isrc/include/kernel -Isrc/include/boot -Isrc/include/arch \
 	-Isrc/include/mm -Isrc/include/proc -Isrc/include/drivers \
 	-Isrc/include/fs -Isrc/include/ui -Isrc/include/shell \
-	-Isrc/include/net
+	-Isrc/include/net -Iout
 
 PUB_HDRS := $(wildcard src/include/*.h) \
 	$(wildcard src/include/*/*.h) \
@@ -195,6 +195,7 @@ KERNEL64_OBJS := \
 	out/userdb.o \
 	out/shell.o \
 	out/i18n.o \
+	out/i18n_data.o \
 	out/lang_select.o \
 	out/onboarding.o \
 	out/session.o \
@@ -230,6 +231,8 @@ KERNEL64_OBJS := \
 	out/gamma_lut.o \
 	out/power.o \
 	out/ata.o \
+	out/blk.o \
+	out/ahci.o \
 	out/kernel64.o
 
 all: dist/cordos.iso
@@ -339,6 +342,10 @@ out/power.o: src/drivers/power.c $(PUB_HDRS) | build
 	$(CC64) $(CFLAGS64) -c $< -o $@
 out/ata.o: src/drivers/ata.c $(PUB_HDRS) | build
 	$(CC64) $(CFLAGS64) -c $< -o $@
+out/blk.o: src/drivers/blk.c $(PUB_HDRS) | build
+	$(CC64) $(CFLAGS64) -c $< -o $@
+out/ahci.o: src/drivers/ahci.c $(PUB_HDRS) | build
+	$(CC64) $(CFLAGS64) -c $< -o $@
 
 # --- fs / shell ---
 out/vfs.o: src/fs/vfs.c $(PUB_HDRS) | build
@@ -355,8 +362,18 @@ out/initrd.o: src/fs/initrd.c $(PUB_HDRS) | build
 	$(CC64) $(CFLAGS64) -c $< -o $@
 out/shell.o: src/shell/shell.c $(PUB_HDRS) | build
 	$(CC64) $(CFLAGS64) -c $< -o $@
-out/i18n.o: src/shell/i18n.c $(PUB_HDRS) | build
+
+I18N_JSON := $(wildcard assets/i18n/*.json)
+
+out/i18n_gen.h out/i18n_data.c: tools/gen_i18n.py $(I18N_JSON) | build
+	$(PY) tools/gen_i18n.py
+
+out/i18n.o: src/shell/i18n.c out/i18n_gen.h $(PUB_HDRS) | build
 	$(CC64) $(CFLAGS64) -c $< -o $@
+out/i18n_data.o: out/i18n_data.c out/i18n_gen.h $(PUB_HDRS) | build
+	$(CC64) $(CFLAGS64) -c $< -o $@
+
+$(KERNEL64_OBJS): out/i18n_gen.h
 
 # --- ui ---
 out/lang_select.o: src/ui/session/lang_select.c $(PUB_HDRS) | build

@@ -1,5 +1,6 @@
 #include "ata.h"
 #include "io.h"
+#include "blk.h"
 #include "serial.h"
 #include "string.h"
 #include "time.h"
@@ -57,6 +58,7 @@ static u16 s_bounce[256];
 static int s_hdd[4];
 static u32 s_hdd_lba[4];
 static u32 s_nhdd;
+static u32 s_blk_idx[4];
 
 static void ata_pause(void)
 {
@@ -195,6 +197,9 @@ static int ata_identify(const struct ata_chan *ch, u32 *out_lba)
     ata_select(ch, 0xA0u);
     st = inb((u16)(ch->io + ATA_REG_STATUS));
     if (st == 0xFFu || st == 0x00u) {
+        serial_write("ata: ");
+        serial_write(ch->name);
+        serial_write(" empty\n");
         return -1;
     }
 
@@ -343,6 +348,34 @@ static int ata_flush(void)
     return 0;
 }
 
+static int ata_blk_read(void *ctx, u32 lba, u32 count, void *buf)
+{
+    u32 idx;
+
+    if (ctx == NULL) {
+        return -1;
+    }
+    idx = *(const u32 *)ctx;
+    if (ata_use_hdd(idx) < 0) {
+        return -1;
+    }
+    return ata_read(lba, count, buf);
+}
+
+static int ata_blk_write(void *ctx, u32 lba, u32 count, const void *buf)
+{
+    u32 idx;
+
+    if (ctx == NULL) {
+        return -1;
+    }
+    idx = *(const u32 *)ctx;
+    if (ata_use_hdd(idx) < 0) {
+        return -1;
+    }
+    return ata_write(lba, count, buf);
+}
+
 void ata_init(void)
 {
     int i;
@@ -381,6 +414,19 @@ void ata_init(void)
     serial_write("ata: using ");
     serial_write(s_chan[s_sel].name);
     serial_putc('\n');
+
+    for (i = 0; i < (int)s_nhdd; ++i) {
+        char name[8];
+
+        s_blk_idx[i] = (u32)i;
+        name[0] = 'i';
+        name[1] = 'd';
+        name[2] = 'e';
+        name[3] = (char)('0' + i);
+        name[4] = '\0';
+        (void)blk_register(name, s_hdd_lba[i], ata_blk_read, ata_blk_write,
+                           &s_blk_idx[i]);
+    }
 }
 
 bool ata_present(void)

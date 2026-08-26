@@ -2,114 +2,22 @@
 #define NUEVOOS_I18N_H
 
 #include "types.h"
-
-enum lang_id {
-    LANG_ES = 0,
-    LANG_EN = 1
-};
-
-enum msg_id {
-    MSG_LANG_TITLE = 0,
-    MSG_LANG_SUBTITLE,
-    MSG_LANG_HINT,
-    MSG_READY,
-    MSG_SHELL_BANNER,
-    MSG_SHELL_PROMPT_HELP,
-    MSG_HELP_HEADER,
-    MSG_HELP_CMDS,
-    MSG_HELP_LANG,
-    MSG_HELP_UTF8,
-    MSG_HELP_ENTER,
-    MSG_CAT_USAGE,
-    MSG_CAT_NOT_FOUND,
-    MSG_LS_ERROR,
-    MSG_UNKNOWN_CMD,
-    MSG_PING_USAGE,
-    MSG_STATUS_SUFFIX,
-    MSG_LOGIN_USER,
-    MSG_LOGIN_PASSWORD,
-    MSG_LOGIN_ENTER,
-    MSG_LOGIN_BAD,
-    MSG_LOGIN_HINT,
-    MSG_SPLASH_TITLE,
-    MSG_SPLASH_STAGE0,
-    MSG_SPLASH_STAGE1,
-    MSG_SPLASH_STAGE2,
-    MSG_SPLASH_STAGE3,
-    MSG_HOME_READY,
-    MSG_HOME_FILES,
-    MSG_HOME_TERMINAL,
-    MSG_HOME_SETTINGS,
-    MSG_HOME_ABOUT,
-    MSG_HOME_LOGOUT,
-    MSG_HOME_POWER,
-    MSG_HOME_HINT,
-    MSG_FILES_TITLE,
-    MSG_FILES_HINT,
-    MSG_ABOUT_BODY,
-    MSG_SETTINGS_BODY,
-    MSG_SETTINGS_WP,
-    MSG_WP_DEFAULT,
-    MSG_WP_ABSTRACT,
-    MSG_SETTINGS_ICONS,
-    MSG_IC_LINEAR,
-    MSG_IC_BOLD,
-    MSG_IC_BROKEN,
-    MSG_IC_BULK,
-    MSG_POWER_MSG,
-    MSG_SHELL_EXIT_HINT,
-    MSG_LAUNCHER,
-    MSG_POWER_CONFIRM,
-    MSG_POWER_CANCEL,
-    MSG_LANG_CLICK,
-    MSG_TERM_BANNER,
-    MSG_DESKTOP_HINT,
-    MSG_CTX_TITLE,
-    MSG_CTX_SHOW_ICONS,
-    MSG_CTX_HIDE_ICONS,
-    MSG_FILE_PREVIEW,
-    MSG_OB_LANG_TITLE,
-    MSG_OB_LANG_BODY,
-    MSG_OB_WELCOME_TITLE,
-    MSG_OB_WELCOME_BODY,
-    MSG_OB_NAME_TITLE,
-    MSG_OB_NAME_BODY,
-    MSG_OB_NAME_PLACE,
-    MSG_OB_PASS_TITLE,
-    MSG_OB_PASS_BODY,
-    MSG_OB_PASS_PLACE,
-    MSG_OB_WIFI_TITLE,
-    MSG_OB_WIFI_BODY,
-    MSG_OB_WIFI_CHECK,
-    MSG_OB_WIFI_OK,
-    MSG_OB_WIFI_FAIL,
-    MSG_OB_WIFI_NONE,
-    MSG_OB_NET_WIRED,
-    MSG_OB_NET_WIFI0,
-    MSG_OB_NET_WIFI1,
-    MSG_OB_NET_WIFI2,
-    MSG_OB_WIFI_SCAN,
-    MSG_OB_WIFI_PASS,
-    MSG_OB_WIFI_OPEN,
-    MSG_OB_CONNECT,
-    MSG_OB_SKIP,
-    MSG_OB_NEXT,
-    MSG_OB_BACK,
-    MSG_OB_ANOTHER_TITLE,
-    MSG_OB_ANOTHER_BODY,
-    MSG_OB_ADD,
-    MSG_OB_CREATING,
-    MSG_COUNT
-};
+#include "i18n_gen.h"
 
 extern enum lang_id lang_os;
 
 void i18n_init(void);
 void i18n_set_lang(enum lang_id lang);
 enum lang_id i18n_lang(void);
+u32 i18n_lang_count(void);
+const char *i18n_lang_code(enum lang_id lang);
 const char *i18n_lang_name(enum lang_id lang);
 const char *i18n(enum msg_id id);
 const char *i18n_month_abbr(u8 month_1_12);
+const char *i18n_month(u8 month_1_12);
+const char *i18n_weekday(u8 weekday_1_7);
+bool i18n_date_day_first(void);
+const char *i18n_date_join(void);
 
 /* Optional: "es", "en", "es-ES", "en-US" → true if applied. */
 bool i18n_set_lang_code(const char *code);

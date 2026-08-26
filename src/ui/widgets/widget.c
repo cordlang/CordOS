@@ -102,7 +102,6 @@ static u8 approach_timed(u8 cur, u8 dest, u32 dur_ms)
 static void paint_glass(u32 x, u32 y, u32 w, u32 h, u8 focus, u8 press)
 {
     u8 glass_a = mix_u8(38u, 86u, focus);
-    u8 rim_a = mix_u8(16u, 64u, focus);
     u32 inset = ((u32)press * 2u) / 255u;
     u32 lift = ((u32)focus * 1u) / 255u;
     u32 sink = ((u32)press * 2u) / 255u;
@@ -111,18 +110,11 @@ static void paint_glass(u32 x, u32 y, u32 w, u32 h, u8 focus, u8 press)
     u32 pw = (w > inset * 2u) ? (w - inset * 2u) : w;
     u32 ph = (h > inset * 2u) ? (h - inset * 2u) : h;
     u32 rad = ph / 2u;
-    struct rgb rim = draw_ui_is_light()
-                         ? (struct rgb){ 0x1A, 0x1A, 0x1C }
-                         : W_WHITE;
 
     if (pw == 0u || ph == 0u) {
         return;
     }
     fb_compose_begin();
-    if (px > 0 && py > 0) {
-        draw_round_fill(px - 1u, py - 1u, pw + 2u, ph + 2u, (ph + 2u) / 2u, rim,
-                        rim_a);
-    }
     draw_glass(px, py, pw, ph, rad, W_GLASS, glass_a);
     if (pw > 24u) {
         draw_round_fill(px + 12u, py + 1u, pw - 24u, 1u, 0, W_WHITE,
@@ -412,15 +404,8 @@ bool ui_icon_btn(u32 id, u32 x, u32 y, u32 w, u32 h, enum ui_icon icon,
         i32 bg_y = (i32)y + yoff;
         i32 icon_y = (i32)(y + (h > isz ? (h - isz) / 2u : 0)) + yoff;
         i32 dot_y = (i32)(y + h - 11u) + yoff;
-        struct rgb rim = draw_ui_is_light()
-                             ? (struct rgb){ 0x1A, 0x1A, 0x1C }
-                             : W_WHITE;
-
         fb_compose_begin();
         if (next > 8u) {
-            draw_round_fill(x + 5u, (u32)(bg_y + 7), w > 10u ? w - 10u : w,
-                            h > 14u ? h - 14u : h, 15u, rim,
-                            a > 24u ? (u8)(a - 24u) : 20u);
             draw_round_fill(x + 6u, (u32)(bg_y + 8), w > 12u ? w - 12u : w,
                             h > 16u ? h - 16u : h, 14u, THEME_HOVER, a);
         }

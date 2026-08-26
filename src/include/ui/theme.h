@@ -3,7 +3,8 @@
 
 #include "types.h"
 
-/* Night instrument — cool glass over a quiet photographic background. */
+/* Night instrument on glass (THEME_FG). Wallpaper chrome is THEME_INK.
+ * Static — never sampled from the background. */
 struct rgb {
     u8 r;
     u8 g;
@@ -15,6 +16,8 @@ static const struct rgb THEME_BG1     = { 0x18, 0x22, 0x2D };
 static const struct rgb THEME_BG2     = { 0x12, 0x1B, 0x25 };
 static const struct rgb THEME_FG      = { 0xEE, 0xF5, 0xF7 };
 static const struct rgb THEME_FG_DIM  = { 0xA9, 0xB9, 0xC4 };
+static const struct rgb THEME_INK     = { 0x1A, 0x1A, 0x1C };
+static const struct rgb THEME_INK_DIM = { 0x4A, 0x4A, 0x52 };
 static const struct rgb THEME_ACCENT  = { 0x55, 0xDE, 0xB5 };
 static const struct rgb THEME_DANGER  = { 0xEE, 0x77, 0x78 };
 static const struct rgb THEME_BORDER  = { 0x54, 0x6A, 0x7A };

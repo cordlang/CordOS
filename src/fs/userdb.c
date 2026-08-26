@@ -182,7 +182,7 @@ void userdb_load(void)
     memset(s_users, 0, sizeof(s_users));
 
     if (!nosfs_disk_ready()) {
-        serial_write("userdb: no disk\n");
+        serial_write("userdb: no writable disk (accounts will not survive reboot)\n");
         return;
     }
     n = nosfs_disk_read(USERS_FILE, 0, buf, sizeof(buf) - 1);

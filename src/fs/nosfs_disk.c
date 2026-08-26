@@ -1,5 +1,5 @@
 #include "nosfs.h"
-#include "ata.h"
+#include "blk.h"
 #include "serial.h"
 #include "string.h"
 
@@ -10,6 +10,9 @@
  *   LBA 2048            superblock (512 B)
  *   LBA 2049..2056      directory (64 × 64 B)
  *   LBA 2057..6143      file payloads (bump allocator)
+ *
+ * Mounted on the first writable HDD/SSD that already has NOSF, else the
+ * first disk large enough is formatted. Same idea as C: / Macintosh HD / /.
  */
 
 #define NOSF_VERSION    1u
@@ -44,7 +47,8 @@ struct __attribute__((packed)) nosf_dirent {
 static struct nosf_sb s_sb;
 static struct nosf_dirent s_dir[NOSFS_MAX_FILES];
 static int s_ready;
-static u8 s_sec[ATA_SECTOR_SIZE];
+static u8 s_sec[BLK_SECTOR_SIZE];
+static const struct blk_dev *s_dev;
 
 static int name_eq(const char *a, const char *b32)
 {
@@ -96,12 +100,18 @@ static void copy_name(char *dst, const char *src)
 
 static int vol_read(u32 rel, u32 count, void *buf)
 {
-    return ata_read(NOSFS_VOL_LBA + rel, count, buf);
+    if (s_dev == NULL || s_dev->read == NULL) {
+        return -1;
+    }
+    return s_dev->read(s_dev->ctx, NOSFS_VOL_LBA + rel, count, buf);
 }
 
 static int vol_write(u32 rel, u32 count, const void *buf)
 {
-    return ata_write(NOSFS_VOL_LBA + rel, count, buf);
+    if (s_dev == NULL || s_dev->write == NULL) {
+        return -1;
+    }
+    return s_dev->write(s_dev->ctx, NOSFS_VOL_LBA + rel, count, buf);
 }
 
 static int load_meta(void)
@@ -133,7 +143,7 @@ static int load_meta(void)
         if (vol_read(NOSF_DIR_LBA + i, 1, s_sec) < 0) {
             return -1;
         }
-        memcpy((u8 *)s_dir + i * ATA_SECTOR_SIZE, s_sec, ATA_SECTOR_SIZE);
+        memcpy((u8 *)s_dir + i * BLK_SECTOR_SIZE, s_sec, BLK_SECTOR_SIZE);
     }
     return 0;
 }
@@ -150,7 +160,7 @@ static int flush_dir(void)
     u32 i;
 
     for (i = 0; i < NOSF_DIR_SECTS; ++i) {
-        memcpy(s_sec, (u8 *)s_dir + i * ATA_SECTOR_SIZE, ATA_SECTOR_SIZE);
+        memcpy(s_sec, (u8 *)s_dir + i * BLK_SECTOR_SIZE, BLK_SECTOR_SIZE);
         if (vol_write(NOSF_DIR_LBA + i, 1, s_sec) < 0) {
             return -1;
         }
@@ -227,23 +237,31 @@ int nosfs_disk_mount(void)
     int blank = -1;
 
     s_ready = 0;
-    if (!ata_present()) {
+    s_dev = NULL;
+    n = blk_count();
+    if (n == 0) {
+        serial_write("nosfs: no writable disk\n");
         return -1;
     }
 
-    n = ata_hdd_count();
     for (i = 0; i < n; ++i) {
-        if (ata_use_hdd(i) < 0) {
+        const struct blk_dev *d = blk_get(i);
+
+        if (d == NULL) {
             continue;
         }
-        if (ata_sectors() < need) {
+        if (d->sectors < need) {
             serial_write("nosfs: ");
-            serial_write("hdd too small, skip\n");
+            serial_write(d->name);
+            serial_write(" too small, skip\n");
             continue;
         }
+        s_dev = d;
         if (load_meta() == 0) {
             s_ready = 1;
-            serial_write("nosfs: mounted NOSF files=");
+            serial_write("nosfs: mounted ");
+            serial_write(d->name);
+            serial_write(" files=");
             serial_print_u32(s_sb.file_count);
             serial_putc('\n');
             return 0;
@@ -254,19 +272,26 @@ int nosfs_disk_mount(void)
     }
 
     if (blank < 0) {
-        serial_write("nosfs: no usable HDD\n");
+        s_dev = NULL;
+        serial_write("nosfs: no usable disk\n");
         return -1;
     }
 
-    if (ata_use_hdd((u32)blank) < 0) {
+    s_dev = blk_get((u32)blank);
+    if (s_dev == NULL) {
         return -1;
     }
+    serial_write("nosfs: format ");
+    serial_write(s_dev->name);
+    serial_putc('\n');
     if (format_vol() < 0) {
         serial_write("nosfs: format failed\n");
+        s_dev = NULL;
         return -1;
     }
     if (load_meta() < 0) {
         serial_write("nosfs: remount after format failed\n");
+        s_dev = NULL;
         return -1;
     }
     s_ready = 1;
@@ -361,9 +386,9 @@ int nosfs_disk_read(const char *name, u32 off, void *buf, u32 len)
     dst = (u8 *)buf;
     pos = 0;
     while (pos < n) {
-        lba = s_dir[idx].data_lba + ((off + pos) / ATA_SECTOR_SIZE);
-        in_sec = (off + pos) % ATA_SECTOR_SIZE;
-        chunk = ATA_SECTOR_SIZE - in_sec;
+        lba = s_dir[idx].data_lba + ((off + pos) / BLK_SECTOR_SIZE);
+        in_sec = (off + pos) % BLK_SECTOR_SIZE;
+        chunk = BLK_SECTOR_SIZE - in_sec;
         if (chunk > n - pos) {
             chunk = n - pos;
         }
@@ -392,7 +417,7 @@ int nosfs_disk_put(const char *name, const void *buf, u32 len)
         return -1;
     }
 
-    need = (len + (ATA_SECTOR_SIZE - 1u)) / ATA_SECTOR_SIZE;
+    need = (len + (BLK_SECTOR_SIZE - 1u)) / BLK_SECTOR_SIZE;
     idx = find_ent(name);
 
     if (idx < 0) {
@@ -427,7 +452,7 @@ int nosfs_disk_put(const char *name, const void *buf, u32 len)
     left = len;
     for (i = 0; i < s_dir[idx].data_sectors; ++i) {
         memset(s_sec, 0, sizeof(s_sec));
-        chunk = left > ATA_SECTOR_SIZE ? ATA_SECTOR_SIZE : left;
+        chunk = left > BLK_SECTOR_SIZE ? BLK_SECTOR_SIZE : left;
         if (chunk > 0) {
             memcpy(s_sec, src, chunk);
             src += chunk;

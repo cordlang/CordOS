@@ -1,5 +1,7 @@
 #include "vfs.h"
+#include "ahci.h"
 #include "ata.h"
+#include "blk.h"
 #include "initrd.h"
 #include "nosfs.h"
 #include "persist.h"
@@ -98,10 +100,14 @@ void phase6_init(void)
         s_fds[i].used = 0;
     }
 
+    blk_init();
     ata_init();
+    ahci_init();
     ram_ok = (nosfs_mount(initrd_blob, initrd_blob_size) == 0);
 
-    if (ata_present() && nosfs_disk_mount() == 0) {
+    if (blk_count() == 0u) {
+        serial_write("phase6: no writable HDD/SSD (need AHCI SATA or IDE)\n");
+    } else if (nosfs_disk_mount() == 0) {
         s_disk = 1;
         if (disk_selftest() == 0) {
             serial_write("phase6: disk writeback OK\n");

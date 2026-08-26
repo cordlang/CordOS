@@ -5,12 +5,17 @@ Phase 6 has two images:
 | Image | Magic | Media | Access |
 |-------|-------|--------|--------|
 | Initrd | `NRD1` | Kernel `.rodata` | Read-only |
-| Disk volume | `NOSF` | ATA LBA 2048..6143 | Read/write |
+| Disk volume | `NOSF` | First writable HDD/SSD (AHCI SATA or IDE) at LBA 2048..6143 | Read/write |
 
-`phase6_init()` probes ATA. If a HDD is present and large enough, it mounts
-(or formats) the NOSF volume as `/` and keeps initrd as a **read-only overlay**
-(disk names shadow initrd). If there is no disk (ISO-only VM), `/` is the
-initrd exactly as before.
+`phase6_init()` probes IDE (legacy ATA) and AHCI SATA. Optical/ATAPI is skipped.
+If a writable disk is large enough, it mounts (or formats) the NOSF volume as
+the system volume — the same idea as Windows `C:`, macOS the Macintosh HD, or
+Linux `/` — and keeps initrd as a **read-only overlay**. ISO-only (no internal
+disk) is a live session: settings and accounts stay in RAM.
+
+VirtualBox is only a stand-in for a real PC: attach a SATA (AHCI) disk, not
+because CordOS is a VM OS, but because that is how a real machine's SSD shows
+up.
 
 ---
 
@@ -105,7 +110,7 @@ Single mount at `/` (overlay when disk is up):
 - `vfs_create(path)` — empty file on disk
 - `vfs_ls("/")` / `vfs_list` — union, disk names hide initrd duplicates
 
-`phase6_init()` (splash stage 2): ATA probe → NOSF mount or initrd → `persist_init()`.
+`phase6_init()`: ATA + AHCI probe → NOSF on the first usable disk (or initrd) → `persist_init()`.
 
 Serial: `phase6: root=disk (initrd overlay RO)` or `phase6: root=initrd`.
 
@@ -121,7 +126,7 @@ int persist_get_u32(const char *key, u32 *value);
 ```
 
 Keys: `lang`, `login_wp`, `icon_style`. Stored as text in `config.txt`.
-No-ops when `persist_available()` is false (ISO-only).
+No-ops when `persist_available()` is false (live ISO, no internal disk).
 
 ---
 
@@ -139,30 +144,26 @@ qemu-system-x86_64 -cdrom out/nuevoos64.iso \
 ```
 
 ISO stays the boot medium (`-boot order=d`). The raw file is an IDE HDD.
-ATA probes **0x1F0 master/slave** then **0x170 master/slave** so either
-primary-master (typical QEMU) or a slave/secondary disk works.
+ATA still probes **0x1F0 / 0x170**. For a closer match to a real PC, QEMU can
+also expose AHCI (`-device ahci,id=ahci -drive ... if=none -device ide-hd,bus=ahci.0,...`).
 
 `make run` is still ISO-only (initrd fallback).
 
 ### VirtualBox
 
-ISO remains the CD boot disk. Attach a second **IDE** disk:
+ISO remains the CD boot disk. The writable volume is a **SATA AHCI** disk —
+the same class of controller as the internal SSD/HDD on a real PC. `run-vbox.ps1`
+creates `out/persist.vdi` if needed and attaches it to SATA port 0.
 
-1. `make ARCH=x86_64 out/persist.img` (or `scripts/mkpersist.sh`).
-2. Convert if you want VDI:
+Manual attach:
 
-   ```text
-   VBoxManage convertfromraw out/persist.img persist.vdi --format VDI
-   ```
+```text
+VBoxManage storagectl <VM> --name SATA --add sata --controller IntelAhci --portcount 2 --bootable off
+VBoxManage convertfromraw out/persist.img persist.vdi --format VDI
+VBoxManage storageattach <VM> --storagectl SATA --port 0 --device 0 \
+  --type hdd --medium persist.vdi
+```
 
-3. Attach as IDE (not SATA/NVMe — this driver is ATA PIO):
+Legacy IDE still works if a HDD is on 0x1F0/0x170. Optical (the ISO) is skipped.
 
-   ```text
-   VBoxManage storageattach <VM> --storagectl "IDE" --port 1 --device 0 \
-     --type hdd --medium persist.vdi
-   ```
-
-   Typical layout: CD = primary master (ATAPI, skipped), HDD = primary slave
-   or secondary master. Both are probed.
-
-Without a HDD, boot is unchanged (initrd).
+Without a writable disk, boot is a live session (initrd only).

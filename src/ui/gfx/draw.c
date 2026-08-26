@@ -16,17 +16,6 @@ static bool s_frost_ok;
 static u32 s_login_wp;
 static u32 s_desk_wp;
 static u32 s_icon_style = ICON_STYLE_BOLD;
-static bool s_ui_light;
-
-void draw_set_ui_light(bool on_light)
-{
-    s_ui_light = on_light;
-}
-
-bool draw_ui_is_light(void)
-{
-    return s_ui_light;
-}
 
 static u32 clamp_rad(u32 w, u32 h, u32 rad)
 {
@@ -713,49 +702,6 @@ static u32 glyph_advance(u32 index, u32 scale)
     return advance;
 }
 
-static u8 draw_rec601_luma(u8 r, u8 g, u8 b)
-{
-    return (u8)(((u32)r * 77u + (u32)g * 150u + (u32)b * 29u) >> 8);
-}
-
-bool draw_region_is_light(u32 x, u32 y, u32 w, u32 h)
-{
-    const u32 nx = 6u;
-    const u32 ny = 3u;
-    u32 gx;
-    u32 gy;
-    u32 sum = 0;
-    u32 n = 0;
-    u32 fw = fb_width();
-    u32 fh = fb_height();
-
-    if (w == 0 || h == 0 || fw == 0 || fh == 0) {
-        return false;
-    }
-    for (gy = 0; gy < ny; ++gy) {
-        u32 py = y + (h * (2u * gy + 1u)) / (2u * ny);
-        if (py >= fh) {
-            py = fh - 1u;
-        }
-        for (gx = 0; gx < nx; ++gx) {
-            u32 px = x + (w * (2u * gx + 1u)) / (2u * nx);
-            u8 r;
-            u8 g;
-            u8 b;
-
-            if (px >= fw) {
-                px = fw - 1u;
-            }
-            if (!fb_get_pixel(px, py, &r, &g, &b)) {
-                continue;
-            }
-            sum += draw_rec601_luma(r, g, b);
-            ++n;
-        }
-    }
-    return n != 0u && (sum / n) >= 128u;
-}
-
 static u32 draw_glyph(u32 x, u32 y, u32 codepoint, struct rgb color, u32 scale)
 {
     const u8 *cover;
@@ -1119,7 +1065,6 @@ static bool cursor_on;
 static i32 cursor_sx;
 static i32 cursor_sy;
 static enum cursor_kind s_cursor_kind;
-static bool s_cursor_on_light;
 static u8 cursor_under[CURSOR_H * CURSOR_W * 3u];
 static u32 cursor_under_w;
 static u32 cursor_under_h;
@@ -1132,14 +1077,12 @@ static void cursor_save_under(i32 x, i32 y);
 
 static void cursor_hotspot(u32 *hot_x, u32 *hot_y, const u8 **spr)
 {
-    bool light = s_cursor_on_light;
-
     if (s_cursor_kind == CURSOR_KIND_POINTER) {
-        *spr = light ? cursor_pointer_dark_rgba : cursor_pointer_rgba;
+        *spr = cursor_pointer_dark_rgba;
         *hot_x = CURSOR_PTR_HOT_X;
         *hot_y = CURSOR_PTR_HOT_Y;
     } else {
-        *spr = light ? cursor_arrow_dark_rgba : cursor_rgba;
+        *spr = cursor_arrow_dark_rgba;
         *hot_x = CURSOR_HOT_X;
         *hot_y = CURSOR_HOT_Y;
     }
@@ -1360,11 +1303,6 @@ void cursor_set_kind(enum cursor_kind kind)
     s_cursor_kind = kind;
 }
 
-void cursor_set_on_light(bool on_light)
-{
-    s_cursor_on_light = on_light;
-}
-
 static void cursor_stamp(u32 x, u32 y)
 {
     const u8 *spr;
@@ -1469,12 +1407,7 @@ void draw_field(u32 x, u32 y, u32 w, u32 h, const char *text, bool password,
     u32 tx;
     u32 ty;
     u32 rad = h / 2u > THEME_RAD_FIELD ? THEME_RAD_FIELD : h / 2u;
-    bool light = draw_ui_is_light();
-    struct rgb border = light ? (struct rgb){ 0x1A, 0x1A, 0x1C }
-                              : (struct rgb){ 0xF7, 0xF8, 0xFA };
 
-    draw_round_fill(x > 0u ? x - 1u : 0u, y > 0u ? y - 1u : 0u,
-                    w + 2u, h + 2u, rad + 1u, border, focused ? 230u : 150u);
     draw_round_fill(x, y, w, h, rad, THEME_FIELD, 230u);
     if (focused) {
         draw_round_fill(x, y, w, 3, 2, THEME_ACCENT, 255u);
@@ -1513,12 +1446,6 @@ void draw_button(u32 x, u32 y, u32 w, u32 h, const char *label, bool focused)
     u32 tx;
     u32 ty;
     u32 rad = h < THEME_RAD_BTN * 2u ? h / 2u : THEME_RAD_BTN;
-    bool light = draw_ui_is_light();
-    struct rgb border = light ? (struct rgb){ 0x1A, 0x1A, 0x1C }
-                              : (struct rgb){ 0xF7, 0xF8, 0xFA };
-
-    draw_round_fill(x > 0u ? x - 1u : 0u, y > 0u ? y - 1u : 0u,
-                    w + 2u, h + 2u, rad + 1u, border, focused ? 230u : 150u);
 
     if (focused) {
         draw_round_fill(x, y, w, h, rad, THEME_ACCENT, 255u);

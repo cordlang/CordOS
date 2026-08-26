@@ -140,27 +140,12 @@ static u8 login_weekday(u16 year, u8 month, u8 day)
 
 static void login_date(char *out, u32 out_len, const struct rtc_time *now)
 {
-    static const char *const days_en[] = {
-        "Sunday", "Monday", "Tuesday", "Wednesday",
-        "Thursday", "Friday", "Saturday"
-    };
-    static const char *const days_es[] = {
-        "Domingo", "Lunes", "Martes", "Miercoles",
-        "Jueves", "Viernes", "Sabado"
-    };
-    static const char *const months_en[] = {
-        "January", "February", "March", "April", "May", "June",
-        "July", "August", "September", "October", "November", "December"
-    };
-    static const char *const months_es[] = {
-        "enero", "febrero", "marzo", "abril", "mayo", "junio",
-        "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"
-    };
     u8 weekday = login_weekday(now->year, now->month, now->day);
     u8 day = now->day;
     u8 month = now->month;
     const char *wd;
     const char *mo;
+    const char *join;
     u32 i = 0;
     char num[4];
     u32 n;
@@ -176,13 +161,9 @@ static void login_date(char *out, u32 out_len, const struct rtc_time *now)
         day = 1;
     }
 
-    if (i18n_lang() == LANG_EN) {
-        wd = days_en[weekday - 1u];
-        mo = months_en[month - 1u];
-    } else {
-        wd = days_es[weekday - 1u];
-        mo = months_es[month - 1u];
-    }
+    wd = i18n_weekday(weekday);
+    mo = i18n_month(month);
+    join = i18n_date_join();
 
     while (*wd != '\0' && i + 1u < out_len) {
         out[i++] = *wd++;
@@ -192,48 +173,36 @@ static void login_date(char *out, u32 out_len, const struct rtc_time *now)
         out[i++] = ' ';
     }
 
-    if (i18n_lang() == LANG_EN) {
-        while (*mo != '\0' && i + 1u < out_len) {
-            out[i++] = *mo++;
+    n = 0;
+    d = day;
+    if (d == 0) {
+        num[n++] = '0';
+    } else {
+        while (d > 0 && n < sizeof(num)) {
+            num[n++] = (char)('0' + (d % 10u));
+            d /= 10u;
         }
-        if (i + 1u < out_len) {
-            out[i++] = ' ';
-        }
-        n = 0;
-        d = day;
-        if (d == 0) {
-            num[n++] = '0';
-        } else {
-            while (d > 0 && n < sizeof(num)) {
-                num[n++] = (char)('0' + (d % 10u));
-                d /= 10u;
-            }
-        }
+    }
+
+    if (i18n_date_day_first()) {
         while (n > 0 && i + 1u < out_len) {
             out[i++] = num[--n];
+        }
+        while (*join != '\0' && i + 1u < out_len) {
+            out[i++] = *join++;
+        }
+        while (*mo != '\0' && i + 1u < out_len) {
+            out[i++] = *mo++;
         }
     } else {
-        n = 0;
-        d = day;
-        if (d == 0) {
-            num[n++] = '0';
-        } else {
-            while (d > 0 && n < sizeof(num)) {
-                num[n++] = (char)('0' + (d % 10u));
-                d /= 10u;
-            }
+        while (*mo != '\0' && i + 1u < out_len) {
+            out[i++] = *mo++;
+        }
+        while (*join != '\0' && i + 1u < out_len) {
+            out[i++] = *join++;
         }
         while (n > 0 && i + 1u < out_len) {
             out[i++] = num[--n];
-        }
-        if (i + 4u < out_len) {
-            out[i++] = ' ';
-            out[i++] = 'd';
-            out[i++] = 'e';
-            out[i++] = ' ';
-        }
-        while (*mo != '\0' && i + 1u < out_len) {
-            out[i++] = *mo++;
         }
     }
     out[i] = '\0';
@@ -281,10 +250,9 @@ static void login_layout(struct login_geom *g)
     g->go_y = g->pass_y + (g->pass_h > LOGIN_GO ? (g->pass_h - LOGIN_GO) / 2u : 0);
 }
 
-static void draw_login_label(u32 x, u32 y, const char *text, u32 scale,
-                             bool on_light)
+static void draw_login_label(u32 x, u32 y, const char *text, u32 scale)
 {
-    draw_text(x, y, text, on_light ? LOGIN_INK : LOGIN_WHITE, scale);
+    draw_text(x, y, text, LOGIN_INK, scale);
 }
 
 static u8 mix_u8(u8 a, u8 b, u8 t)
@@ -370,7 +338,6 @@ static void paint_login_screen(const struct login_draw *d)
     u32 pass_x;
     u32 go_x;
     u8 glass_a;
-    u8 rim_a;
     u8 focus;
     struct rgb tint;
     bool has_pass;
@@ -399,35 +366,22 @@ static void paint_login_screen(const struct login_draw *d)
     {
         u32 dx = (w > date_w) ? (w - date_w) / 2u : 0;
         u32 cx = (w > clock_w) ? (w - clock_w) / 2u : 0;
-        u32 band_x = (dx < cx) ? dx : cx;
-        u32 band_w = date_w > clock_w ? date_w : clock_w;
-        u32 band_h = (g.clock_y - g.date_y) + FONT_TITLE_H;
-        bool time_light = draw_region_is_light(band_x, g.date_y, band_w, band_h);
-        struct rgb chrome = time_light ? LOGIN_INK : LOGIN_WHITE;
+        struct rgb chrome = LOGIN_WHITE;
 
-        draw_set_ui_light(time_light);
-        cursor_set_on_light(time_light);
-        draw_login_label(dx, g.date_y, date, 1, time_light);
-        draw_login_label(cx, g.clock_y, clock, 2, time_light);
+        draw_login_label(dx, g.date_y, date, 1);
+        draw_login_label(cx, g.clock_y, clock, 2);
 
         draw_login_logo(g.logo_x, g.logo_y);
 
         name_w = draw_text_width(name, 1);
         {
             u32 nx = (w > name_w) ? (w - name_w) / 2u : 0;
-            draw_login_label(nx, g.name_y, name, 1, time_light);
+            draw_login_label(nx, g.name_y, name, 1);
         }
 
         tint = LOGIN_GLASS;
         glass_a = mix_u8(38u, 86u, focus);
-        rim_a = mix_u8(16u, 64u, focus);
 
-        draw_round_fill(pass_x > 0u ? pass_x - 1u : 0u,
-                        g.pass_y > 0u ? g.pass_y - 1u : 0u,
-                        g.pass_w + 2u, g.pass_h + 2u,
-                        (g.pass_h + 2u) / 2u,
-                        draw_ui_is_light() ? LOGIN_INK : LOGIN_WHITE,
-                        rim_a);
         draw_glass(pass_x, g.pass_y, g.pass_w, g.pass_h, g.pass_h / 2u, tint, glass_a);
         if (g.pass_w > 24u) {
             draw_round_fill(pass_x + 12u, g.pass_y + 1u, g.pass_w - 24u, 1u, 0,
@@ -451,21 +405,10 @@ static void paint_login_screen(const struct login_draw *d)
 
         {
             u8 go_a = d->go_hot ? 100u : mix_u8(42u, 78u, focus);
-            draw_round_fill(go_x > 0 ? go_x - 1u : 0,
-                            g.go_y > 0 ? g.go_y - 1u : 0,
-                            LOGIN_GO + 2u, LOGIN_GO + 2u, (LOGIN_GO + 2u) / 2u,
-                            draw_ui_is_light() ? LOGIN_INK : LOGIN_WHITE,
-                            rim_a);
             draw_glass(go_x, g.go_y, LOGIN_GO, LOGIN_GO, LOGIN_GO / 2u, tint, go_a);
             draw_go_arrow(go_x + LOGIN_GO / 2u, g.go_y + LOGIN_GO / 2u, chrome);
         }
 
-        draw_round_fill(g.power_x > 0 ? g.power_x - 1u : 0,
-                        g.power_y > 0 ? g.power_y - 1u : 0,
-                        LOGIN_POWER + 2u, LOGIN_POWER + 2u,
-                        (LOGIN_POWER + 2u) / 2u,
-                        draw_ui_is_light() ? LOGIN_INK : LOGIN_WHITE,
-                        d->power_hot ? 70u : 22u);
         draw_glass(g.power_x, g.power_y, LOGIN_POWER, LOGIN_POWER,
                    LOGIN_POWER / 2u, tint, d->power_hot ? 92u : 56u);
         draw_icon(g.power_x + 8u, g.power_y + 8u, 20u, UI_ICON_POWER, chrome);
@@ -699,7 +642,7 @@ static bool gfx_login(void)
                     fb_compose_begin();
                     draw_bg_login();
                     fb_overlay(6, 8, 12, 140u);
-                    draw_text(48, 120, i18n(MSG_POWER_MSG), LOGIN_WHITE, 1);
+                    draw_text(48, 120, i18n(MSG_POWER_MSG), LOGIN_INK, 1);
                     fb_compose_present();
                     login_wait_ms(250u);
                     machine_power_off();

@@ -67,6 +67,116 @@ function Invoke-VBoxSoft {
     }
 }
 
+function Get-SataControllerName {
+    param([string[]]$Info)
+    $names = @{}
+    $types = @{}
+    foreach ($line in $Info) {
+        if ($line -match '^storagecontrollername(\d+)="(.*)"$') {
+            $names[$Matches[1]] = $Matches[2]
+        } elseif ($line -match '^storagecontrollertype(\d+)="(.*)"$') {
+            $types[$Matches[1]] = $Matches[2]
+        }
+    }
+    foreach ($k in @($names.Keys)) {
+        if ($types.ContainsKey($k) -and $types[$k] -eq "IntelAhci") {
+            return $names[$k]
+        }
+    }
+    return $null
+}
+
+function Get-StorageSlot {
+    param([string[]]$Info, [string]$Ctl, [int]$Port, [int]$Device)
+    $want = "$Ctl-$Port-$Device"
+    foreach ($line in $Info) {
+        if ($line -match ('^"' + [regex]::Escape($want) + '"="(.*)"$')) {
+            return $Matches[1]
+        }
+    }
+    return "none"
+}
+
+function Ensure-PersistHdd {
+    # VirtualBox SATA is a stand-in for the PC's internal HDD/SSD.
+    # The kernel finds it via AHCI, same as a real machine — not a VBox-only trick.
+    $outDir = Join-Path $PSScriptRoot "out"
+    if (-not (Test-Path -LiteralPath $outDir)) {
+        New-Item -ItemType Directory -Path $outDir | Out-Null
+    }
+    $img = Join-Path $outDir "persist.img"
+    $vdi = Join-Path $outDir "persist.vdi"
+
+    $info = @(& $script:VBoxManage showvminfo $VmName --machinereadable)
+    $sata = Get-SataControllerName $info
+    if (-not $sata) {
+        Write-Host "Anadiendo SATA AHCI (disco interno del PC)..."
+        Invoke-VBox -VArgs @(
+            "storagectl", $VmName,
+            "--name", "SATA",
+            "--add", "sata",
+            "--controller", "IntelAhci",
+            "--portcount", "2",
+            "--bootable", "off"
+        )
+        $sata = "SATA"
+        $info = @(& $script:VBoxManage showvminfo $VmName --machinereadable)
+    }
+
+    $sata00 = Get-StorageSlot $info $sata 0 0
+    if ($sata00 -and $sata00 -ne "none") {
+        Write-Host "Disco del sistema (SATA 0 / AHCI): $sata00"
+        $ide10 = Get-StorageSlot $info "IDE" 1 0
+        if ($ide10 -and $ide10 -ne "none") {
+            Write-Host "Quitando HDD extra de IDE 1:0 (el sistema vive en SATA)"
+            Invoke-VBoxSoft -VArgs @(
+                "storageattach", $VmName,
+                "--storagectl", "IDE",
+                "--port", "1",
+                "--device", "0",
+                "--medium", "none"
+            )
+        }
+        return
+    }
+
+    $medium = $null
+    $ide10 = Get-StorageSlot $info "IDE" 1 0
+    if ($ide10 -and $ide10 -ne "none") {
+        Write-Host "Moviendo disco de IDE 1:0 a SATA (como un SSD interno)..."
+        Invoke-VBox -VArgs @(
+            "storageattach", $VmName,
+            "--storagectl", "IDE",
+            "--port", "1",
+            "--device", "0",
+            "--medium", "none"
+        )
+        $medium = $ide10
+    } else {
+        if (-not (Test-Path -LiteralPath $vdi)) {
+            if (-not (Test-Path -LiteralPath $img)) {
+                $fs = [System.IO.File]::Open($img, [System.IO.FileMode]::Create,
+                                             [System.IO.FileAccess]::Write)
+                $fs.SetLength(16MB)
+                $fs.Close()
+                Write-Host "Creado persist.img (16 MiB)"
+            }
+            Invoke-VBox -VArgs @("convertfromraw", $img, $vdi, "--format", "VDI")
+        }
+        $medium = $vdi
+    }
+
+    Invoke-VBox -VArgs @(
+        "storageattach", $VmName,
+        "--storagectl", $sata,
+        "--port", "0",
+        "--device", "0",
+        "--type", "hdd",
+        "--medium", $medium
+    )
+    Write-Host "Montando disco del sistema: $medium (SATA 0 / AHCI)"
+}
+
 if (-not (Test-Path -LiteralPath $IsoPath)) {
     Write-Host "No esta la ISO: $IsoPath"
     Write-Host "Compilala primero en WSL:"
@@ -125,6 +235,7 @@ if (-not $exists) {
     Invoke-VBoxSoft -VArgs @("modifyvm", $VmName, "--firmware", "bios")
     Invoke-VBoxSoft -VArgs @("modifyvm", $VmName, "--graphicscontroller", "VBoxVGA")
     Invoke-VBox -VArgs @("storagectl", $VmName, "--name", "IDE", "--add", "ide", "--controller", "PIIX4")
+    Invoke-VBox -VArgs @("storagectl", $VmName, "--name", "SATA", "--add", "sata", "--controller", "IntelAhci", "--portcount", "2", "--bootable", "off")
     Write-Host "VM creada."
 }
 
@@ -282,6 +393,8 @@ Invoke-VBox -VArgs @(
     "--medium", $IsoPath,
     "--forceunmount"
 )
+
+Ensure-PersistHdd
 
 Write-Host "Arrancando VirtualBox..."
 try {

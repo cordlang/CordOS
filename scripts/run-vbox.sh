@@ -46,6 +46,8 @@ if ! VBoxManage showvminfo "$VM_NAME" >/dev/null 2>&1; then
     VBoxManage modifyvm "$VM_NAME" --firmware bios >/dev/null 2>&1 || true
     VBoxManage modifyvm "$VM_NAME" --graphicscontroller VBoxVGA >/dev/null 2>&1 || true
     VBoxManage storagectl "$VM_NAME" --name IDE --add ide --controller PIIX4
+    VBoxManage storagectl "$VM_NAME" --name SATA --add sata --controller IntelAhci \
+        --portcount 2 --bootable off
 fi
 
 if VBoxManage list runningvms | grep -q "\"$VM_NAME\""; then
@@ -114,6 +116,66 @@ VBoxManage storageattach "$VM_NAME" --storagectl IDE --port 0 --device 0 \
 VBoxManage closemedium dvd "$ISO" --force >/dev/null 2>&1 || true
 VBoxManage storageattach "$VM_NAME" --storagectl IDE --port 0 --device 0 \
     --type dvddrive --medium "$ISO" --forceunmount
+
+PERSIST_IMG="$ROOT/out/persist.img"
+PERSIST_VDI="$ROOT/out/persist.vdi"
+INFO="$(VBoxManage showvminfo "$VM_NAME" --machinereadable)"
+SATA_NAME=""
+i=0
+while [ "$i" -le 7 ]; do
+    name="$(printf '%s\n' "$INFO" | sed -n "s/^storagecontrollername${i}=\"\\(.*\\)\"$/\\1/p")"
+    typ="$(printf '%s\n' "$INFO" | sed -n "s/^storagecontrollertype${i}=\"\\(.*\\)\"$/\\1/p")"
+    if [ "$typ" = "IntelAhci" ]; then
+        SATA_NAME="$name"
+        break
+    fi
+    i=$((i + 1))
+done
+
+if [[ -z "$SATA_NAME" ]]; then
+    echo "Anadiendo SATA AHCI (disco interno del PC)..."
+    VBoxManage storagectl "$VM_NAME" --name SATA --add sata --controller IntelAhci \
+        --portcount 2 --bootable off
+    SATA_NAME="SATA"
+    INFO="$(VBoxManage showvminfo "$VM_NAME" --machinereadable)"
+fi
+
+slot_val() {
+    local key="$1"
+    printf '%s\n' "$INFO" | sed -n "s/^\"${key}\"=\"\\(.*\\)\"$/\\1/p"
+}
+
+SATA00="$(slot_val "${SATA_NAME}-0-0")"
+IDE10="$(slot_val "IDE-1-0")"
+
+if [[ -n "$SATA00" && "$SATA00" != "none" ]]; then
+    echo "Disco del sistema (SATA 0 / AHCI): $SATA00"
+    if [[ -n "$IDE10" && "$IDE10" != "none" ]]; then
+        echo "Quitando HDD extra de IDE 1:0 (el sistema vive en SATA)"
+        VBoxManage storageattach "$VM_NAME" --storagectl IDE --port 1 --device 0 \
+            --medium none >/dev/null 2>&1 || true
+    fi
+else
+    mkdir -p "$ROOT/out"
+    MEDIUM=""
+    if [[ -n "$IDE10" && "$IDE10" != "none" ]]; then
+        echo "Moviendo disco de IDE 1:0 a SATA (como un SSD interno)..."
+        VBoxManage storageattach "$VM_NAME" --storagectl IDE --port 1 --device 0 \
+            --medium none
+        MEDIUM="$IDE10"
+    else
+        if [[ ! -f "$PERSIST_VDI" ]]; then
+            if [[ ! -f "$PERSIST_IMG" ]]; then
+                bash "$ROOT/scripts/mkpersist.sh" "$PERSIST_IMG"
+            fi
+            VBoxManage convertfromraw "$PERSIST_IMG" "$PERSIST_VDI" --format VDI
+        fi
+        MEDIUM="$PERSIST_VDI"
+    fi
+    echo "Montando disco del sistema: $MEDIUM (SATA 0 / AHCI)"
+    VBoxManage storageattach "$VM_NAME" --storagectl "$SATA_NAME" --port 0 --device 0 \
+        --type hdd --medium "$MEDIUM"
+fi
 
 echo "Arrancando VirtualBox..."
 VBoxManage startvm "$VM_NAME" --type gui

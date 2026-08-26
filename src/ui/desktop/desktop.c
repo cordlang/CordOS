@@ -57,12 +57,12 @@
 #define HIT_TITLE    0x500u
 #define HIT_BODY     0x600u
 #define HIT_FILE     0x700u
-#define HIT_LANG_ES  0x800u
-#define HIT_LANG_EN  0x801u
-#define HIT_POWER_OK 0x802u
-#define HIT_POWER_NO 0x803u
-#define HIT_WP_0     0x810u
-#define HIT_WP_1     0x811u
+#define HIT_LANG     0x800u
+#define HIT_LANG_MAX 16u
+#define HIT_POWER_OK 0x810u
+#define HIT_POWER_NO 0x811u
+#define HIT_WP_0     0x812u
+#define HIT_WP_1     0x813u
 #define HIT_IC_0     0x820u
 #define HIT_CTX      0xA00u
 #define HIT_DOCK     0xB00u
@@ -74,8 +74,8 @@
 #define IC_THUMB_GAP ui_px(14u)
 
 static const struct rgb DESK_WHITE = { 0xF7, 0xF8, 0xFA };
-static const struct rgb DESK_MUTED = { 0xC4, 0xC8, 0xD0 };
 static const struct rgb DESK_INK   = { 0x1A, 0x1A, 0x1C };
+static const struct rgb DESK_MUTED = { 0x4A, 0x4A, 0x52 };
 
 enum win_kind {
     WIN_FILES = 0,
@@ -126,6 +126,7 @@ static u32 s_last_click_ms;
 
 static void settings_layout(const struct window *w, u32 *lang_y, u32 *wp_y,
                             u32 *ic_y);
+static void settings_lang_btn(u32 bx, u32 lang_y, u32 i, u32 *x, u32 *y);
 static u32 hit_test(i32 px, i32 py);
 static enum cursor_kind desktop_cursor_kind(u32 hit);
 static void desktop_redraw(void);
@@ -199,7 +200,7 @@ static void date_refresh(u8 day, u8 mon)
         mon = 1;
     }
     mn = i18n_month_abbr(mon);
-    if (i18n_lang() == LANG_ES) {
+    if (i18n_date_day_first()) {
         s_date[0] = (char)('0' + (day / 10u));
         s_date[1] = (char)('0' + (day % 10u));
         s_date[2] = ' ';
@@ -299,8 +300,6 @@ static void desktop_cursor_update(bool scene_is_back)
     bool moved = !s_cursor_valid || mx != s_cursor_x || my != s_cursor_y;
     u32 hit;
     enum cursor_kind kind;
-    u32 sx;
-    u32 sy;
 
     if (!scene_is_back && !moved) {
         return;
@@ -315,15 +314,6 @@ static void desktop_cursor_update(bool scene_is_back)
     }
     if (my < 0) {
         my = 0;
-    }
-    sx = (u32)mx;
-    sy = (u32)my;
-    if (fb_compose_ready()) {
-        fb_compose_begin();
-        cursor_set_on_light(draw_region_is_light(sx, sy, 12u, 12u));
-        if (!scene_is_back) {
-            fb_compose_end();
-        }
     }
     hit = hit_test(mx, my);
     kind = desktop_cursor_kind(hit);
@@ -834,11 +824,22 @@ static u32 hit_test(i32 px, i32 py)
             u32 s;
 
             settings_layout(w, &lang_y, &wp_y, &ic_y);
-            if (in_rect(px, py, wx + 24, (i32)lang_y, 140, 40)) {
-                return HIT_LANG_ES;
-            }
-            if (in_rect(px, py, wx + 180, (i32)lang_y, 140, 40)) {
-                return HIT_LANG_EN;
+            {
+                u32 li;
+                u32 n = i18n_lang_count();
+
+                if (n > HIT_LANG_MAX) {
+                    n = HIT_LANG_MAX;
+                }
+                for (li = 0; li < n; ++li) {
+                    u32 lx;
+                    u32 ly;
+
+                    settings_lang_btn((u32)wx, lang_y, li, &lx, &ly);
+                    if (in_rect(px, py, (i32)lx, (i32)ly, 140, 40)) {
+                        return HIT_LANG + li;
+                    }
+                }
             }
             if (in_rect(px, py, wx + 24, (i32)wp_y, (i32)WP_THUMB_W,
                         (i32)WP_THUMB_H)) {
@@ -937,7 +938,7 @@ static enum cursor_kind desktop_cursor_kind(u32 hit)
     if (hit >= HIT_FILE && hit < HIT_FILE + MAX_FILES) {
         return CURSOR_KIND_POINTER;
     }
-    if (hit == HIT_LANG_ES || hit == HIT_LANG_EN ||
+    if ((hit >= HIT_LANG && hit < HIT_LANG + HIT_LANG_MAX) ||
         hit == HIT_POWER_OK || hit == HIT_POWER_NO ||
         hit == HIT_WP_0 || hit == HIT_WP_1 ||
         (hit >= HIT_IC_0 && hit < HIT_IC_0 + ICON_STYLE_COUNT)) {
@@ -986,17 +987,15 @@ static void draw_desktop_icons(void)
         u32 ix;
         u32 iy;
         bool hot = (s_hover == HIT_ICON + i);
-        bool light;
         struct rgb label;
         icon_geom(i, &x, &y, &w, &h);
-        light = draw_region_is_light(x, y, w, h > 24u ? h - 24u : h);
-        label = hot ? THEME_ACCENT : (light ? DESK_INK : DESK_WHITE);
+        label = hot ? THEME_ACCENT : DESK_INK;
         if (hot) {
             draw_glass(x, y, w, h > 24u ? h - 24u : h, 18, THEME_GLASS, 64u);
         }
         ix = x + (w > 48u ? (w - 48u) / 2u : 0);
         iy = y + 10u;
-        draw_icon(ix, iy, 48, icons[i], light && !hot ? DESK_INK : THEME_FG);
+        draw_icon(ix, iy, 48, icons[i], hot ? THEME_ACCENT : DESK_INK);
         draw_text_centered(x + w / 2u, y + 68u, i18n(labels[i]), label, 1);
     }
 }
@@ -1005,12 +1004,23 @@ static void settings_layout(const struct window *w, u32 *lang_y, u32 *wp_y,
                             u32 *ic_y)
 {
     u32 py = (u32)w->y + TITLE_H + 16u + FONT_LINE * 2u;
+    u32 n = i18n_lang_count();
+    u32 rows = (n + 1u) / 2u;
 
+    if (rows == 0u) {
+        rows = 1u;
+    }
     *lang_y = py;
-    py += 52u + FONT_HEIGHT + 12u + FONT_LINE;
+    py += rows * 48u + FONT_HEIGHT + 12u + FONT_LINE;
     *wp_y = py;
     py += WP_THUMB_H + 8u + FONT_LINE + 12u + FONT_LINE;
     *ic_y = py;
+}
+
+static void settings_lang_btn(u32 bx, u32 lang_y, u32 i, u32 *x, u32 *y)
+{
+    *x = bx + 24u + (i % 2u) * 156u;
+    *y = lang_y + (i / 2u) * 48u;
 }
 
 static void draw_win_body(struct window *w, u32 id)
@@ -1077,11 +1087,30 @@ static void draw_win_body(struct window *w, u32 id)
         draw_text(bx + 24, by + TITLE_H + 16u, i18n(MSG_SETTINGS_BODY), THEME_FG, 1);
         draw_text(bx + 24, by + TITLE_H + 16u + FONT_LINE, i18n(MSG_LANG_CLICK),
                   THEME_FG_DIM, 1);
-        draw_button(bx + 24, lang_y, 140, 40, i18n_lang_name(LANG_ES),
-                    i18n_lang() == LANG_ES || s_hover == HIT_LANG_ES);
-        draw_button(bx + 180, lang_y, 140, 40, i18n_lang_name(LANG_EN),
-                    i18n_lang() == LANG_EN || s_hover == HIT_LANG_EN);
-        draw_text(bx + 24, lang_y + 52u, i18n_lang_name(i18n_lang()), THEME_ACCENT, 1);
+        {
+            u32 li;
+            u32 n = i18n_lang_count();
+            u32 rows;
+
+            if (n > HIT_LANG_MAX) {
+                n = HIT_LANG_MAX;
+            }
+            rows = (n + 1u) / 2u;
+            if (rows == 0u) {
+                rows = 1u;
+            }
+            for (li = 0; li < n; ++li) {
+                u32 lx;
+                u32 ly;
+                enum lang_id id = (enum lang_id)li;
+
+                settings_lang_btn(bx, lang_y, li, &lx, &ly);
+                draw_button(lx, ly, 140, 40, i18n_lang_name(id),
+                            i18n_lang() == id || s_hover == HIT_LANG + li);
+            }
+            draw_text(bx + 24, lang_y + rows * 48u, i18n_lang_name(i18n_lang()),
+                      THEME_ACCENT, 1);
+        }
         draw_text(bx + 24, wp_y - FONT_LINE, i18n(MSG_SETTINGS_WP), THEME_FG, 1);
         t1x = bx + 24u + WP_THUMB_W + WP_THUMB_GAP;
         draw_wallpaper_thumb(bx + 24u, wp_y, WP_THUMB_W, WP_THUMB_H,
@@ -1145,17 +1174,13 @@ static void draw_status(void)
     u32 bat = 22u;
     struct rgb sheen = { 0xFF, 0xFF, 0xFF };
     bool hot = (s_hover == HIT_STATUS);
-    bool light;
-    struct rgb icon_col;
 
     status_geom(&sx, &sy, &sw, &sh);
-    light = draw_region_is_light(sx, sy, sw, sh);
-    icon_col = light ? DESK_INK : DESK_WHITE;
     draw_glass(sx, sy, sw, sh, sh / 2u, THEME_GLASS, hot ? 90u : 70u);
     draw_round_fill(sx + 2u, sy + 2u, sw - 4u, sh / 3u, sh / 2u, sheen, 22u);
     draw_icon(sx + (sw > bat ? (sw - bat) / 2u : 0),
               sy + (sh > bat ? (sh - bat) / 2u : 0),
-              bat, battery_icon(), icon_col);
+              bat, battery_icon(), DESK_WHITE);
 }
 
 static void draw_dock(void)
@@ -1174,12 +1199,8 @@ static void draw_dock(void)
     u32 i;
     struct rgb sheen = { 0xFF, 0xFF, 0xFF };
     bool launcher_hot = (s_hover == HIT_LAUNCHER) || s_menu;
-    bool dock_light;
-    struct rgb idle;
 
     dock_geom(&dx, &dy, &dw, &dh);
-    dock_light = draw_region_is_light(dx, dy, dw, dh);
-    idle = dock_light ? DESK_INK : THEME_FG;
     draw_glass(dx, dy, dw, dh, dh / 2u, THEME_GLASS, 72u);
     draw_round_fill(dx + 3u, dy + 3u, dw - 6u, dh / 3u, dh / 2u, sheen, 24u);
 
@@ -1202,7 +1223,7 @@ static void draw_dock(void)
             draw_round_fill(sx + 6u, dy + 8u, DOCK_SLOT - 12u, dh - 16u, 14u,
                             THEME_HOVER, 170u);
         }
-        col = (i == 0u) ? THEME_ACCENT : (hot ? THEME_ACCENT : idle);
+        col = (i == 0u) ? THEME_ACCENT : (hot ? THEME_ACCENT : THEME_FG);
         draw_icon(ix, iy, DOCK_ICON, apps[i], col);
         if (run) {
             u32 dot = sx + (DOCK_SLOT > 6u ? (DOCK_SLOT - 6u) / 2u : 0);
@@ -1349,26 +1370,14 @@ static void paint_windows(void)
 static void paint_desktop_base(void)
 {
     u32 w = fb_width();
-    u32 clock_w = draw_text_width(s_clock, 2);
-    u32 date_w = draw_text_width(s_date, 1);
-    u32 band_w = clock_w > date_w ? clock_w : date_w;
-    u32 band_x = (w > band_w) ? (w - band_w) / 2u : 0;
-    bool light;
-    struct rgb ink;
-    struct rgb muted;
 
     draw_bg_atmosphere();
     fb_overlay(THEME_BG0.r, THEME_BG0.g, THEME_BG0.b, 18u);
-    light = draw_region_is_light(band_x, 16u, band_w + 8u, 88u);
-    draw_set_ui_light(light);
-    cursor_set_on_light(light);
-    ink = light ? DESK_INK : DESK_WHITE;
-    muted = light ? THEME_TITLE : DESK_MUTED;
     if (w > 720u) {
-        draw_text(24u, 22u, name_os, light ? DESK_INK : DESK_MUTED, 1);
+        draw_text(24u, 22u, name_os, DESK_MUTED, 1);
     }
-    draw_text_centered(w / 2u, 18u, s_clock, ink, 2);
-    draw_text_centered(w / 2u, 18u + FONT_HEIGHT * 2u + 4u, s_date, muted, 1);
+    draw_text_centered(w / 2u, 18u, s_clock, DESK_INK, 2);
+    draw_text_centered(w / 2u, 18u + FONT_HEIGHT * 2u + 4u, s_date, DESK_MUTED, 1);
     draw_desktop_icons();
 }
 
@@ -1405,8 +1414,8 @@ static void power_halt(void)
     cursor_hide();
     fb_compose_begin();
     draw_bg_atmosphere();
-    draw_text(48, 120, name_os, THEME_FG, 2);
-    draw_text(48, 180, i18n(MSG_POWER_MSG), THEME_FG, 1);
+    draw_text(48, 120, name_os, THEME_INK, 2);
+    draw_text(48, 180, i18n(MSG_POWER_MSG), THEME_INK, 1);
     cursor_invalidate();
     fb_compose_present();
     machine_power_off();
@@ -1475,16 +1484,14 @@ static void handle_click(u32 hit, bool dbl)
         }
         return;
     }
-    if (hit == HIT_LANG_ES) {
-        i18n_set_lang(LANG_ES);
-        (void)persist_set_u32("lang", (u32)LANG_ES);
-        clock_refresh();
-        return;
-    }
-    if (hit == HIT_LANG_EN) {
-        i18n_set_lang(LANG_EN);
-        (void)persist_set_u32("lang", (u32)LANG_EN);
-        clock_refresh();
+    if (hit >= HIT_LANG && hit < HIT_LANG + HIT_LANG_MAX) {
+        u32 li = hit - HIT_LANG;
+
+        if (li < i18n_lang_count()) {
+            i18n_set_lang((enum lang_id)li);
+            (void)persist_set_u32("lang", li);
+            clock_refresh();
+        }
         return;
     }
     if (hit == HIT_WP_0) {

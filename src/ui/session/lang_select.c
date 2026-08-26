@@ -13,24 +13,24 @@
 
 static void draw_picker_text(u32 focus)
 {
+    u32 i;
+    u32 n = i18n_lang_count();
+
     vga_clear();
     vga_print(i18n(MSG_LANG_TITLE));
     vga_print("\n\n");
     vga_print(i18n(MSG_LANG_SUBTITLE));
     vga_print("\n\n");
 
-    if (focus == 0) {
-        vga_print("> Espanol\n");
-        vga_print("  English\n");
-    } else {
-        vga_print("  Espanol\n");
-        vga_print("> English\n");
+    for (i = 0; i < n; ++i) {
+        vga_print(i == focus ? "> " : "  ");
+        vga_print(i18n_lang_name((enum lang_id)i));
+        vga_print("\n");
     }
 
     vga_print("\n");
     vga_print(i18n(MSG_LANG_HINT));
     vga_print("\n");
-    vga_print("1=ES  2=EN  Tab  Enter\n");
 }
 
 static void u32_to_dec(u32 value, char *out, u32 out_len)
@@ -75,6 +75,12 @@ static void lang_layout(struct lang_geom *g)
     g->panel_h = ui_px(360u);
     g->button_y = ui_px(88u);
     g->button_h = ui_px(56u);
+    {
+        u32 n = i18n_lang_count();
+        u32 list = n * (g->button_h + 16u);
+
+        g->panel_h = ui_px(200u) + list;
+    }
 
     if (g->panel_w + 40u > w) {
         g->panel_w = w > 40u ? w - 40u : w;
@@ -104,24 +110,26 @@ static void draw_picker_gfx(u32 focus)
 
     fb_compose_begin();
     draw_bg_frosted();
-    {
-        bool light = draw_region_is_light(g.px, g.py, g.panel_w, g.panel_h);
-        draw_set_ui_light(light);
-        cursor_set_on_light(light);
-    }
     brand_w = draw_text_width(name_os, title_scale);
     draw_text((w > brand_w) ? (w - brand_w) / 2u : 20,
               g.py > 72u ? g.py - 72u : 16,
-              name_os, THEME_FG, title_scale);
+              name_os, THEME_INK, title_scale);
 
     draw_panel(g.px, g.py, g.panel_w, g.panel_h, false);
     draw_text(g.px + 36, g.py + 32, i18n(MSG_LANG_SUBTITLE), THEME_FG_DIM, 1);
 
-    draw_button(g.px + 40, g.py + g.button_y, btn_w, g.button_h,
-                "Español", focus == 0);
-    draw_button(g.px + 40, g.py + g.button_y + g.button_h + 16u,
-                btn_w, g.button_h, "English",
-                focus == 1);
+    {
+        u32 li;
+        u32 n = i18n_lang_count();
+
+        for (li = 0; li < n; ++li) {
+            draw_button(g.px + 40,
+                        g.py + g.button_y + li * (g.button_h + 16u),
+                        btn_w, g.button_h,
+                        i18n_lang_name((enum lang_id)li),
+                        focus == li);
+        }
+    }
 
     draw_text(g.px + 36, g.py + g.panel_h - 72,
               i18n(MSG_LANG_HINT), THEME_FG_DIM, 1);
@@ -198,28 +206,36 @@ bool lang_try_cmdline(void *mb2_addr)
 static u32 lang_hit(i32 px, i32 py)
 {
     struct lang_geom g;
+    u32 i;
+    u32 n = i18n_lang_count();
 
     lang_layout(&g);
 
-    if (px >= (i32)(g.px + 40) && px < (i32)(g.px + g.panel_w - 40u) &&
-        py >= (i32)(g.py + g.button_y) &&
-        py < (i32)(g.py + g.button_y + g.button_h)) {
-        return 0;
-    }
-    if (px >= (i32)(g.px + 40) && px < (i32)(g.px + g.panel_w - 40u) &&
-        py >= (i32)(g.py + g.button_y + g.button_h + 16u) &&
-        py < (i32)(g.py + g.button_y + g.button_h * 2u + 16u)) {
-        return 1;
+    for (i = 0; i < n; ++i) {
+        u32 y = g.py + g.button_y + i * (g.button_h + 16u);
+
+        if (px >= (i32)(g.px + 40) && px < (i32)(g.px + g.panel_w - 40u) &&
+            py >= (i32)y && py < (i32)(y + g.button_h)) {
+            return i;
+        }
     }
     return 0xFFu;
 }
 
 void lang_select_run(void)
 {
-    u32 focus = (lang_os == LANG_EN) ? 1u : 0u;
+    u32 n = i18n_lang_count();
+    u32 focus = (u32)i18n_lang();
     bool dirty = true;
     i32 last_x = -1;
     i32 last_y = -1;
+
+    if (n == 0u) {
+        n = 1u;
+    }
+    if (focus >= n) {
+        focus = 0;
+    }
 
     if (fb_available()) {
         mouse_set_bounds(fb_width(), fb_height());
@@ -230,30 +246,30 @@ void lang_select_run(void)
             u32 code = keyboard_get_codepoint();
 
             if (code == KEY_UP || code == KEY_DOWN || code == '\t') {
-                focus ^= 1u;
+                if (code == KEY_UP) {
+                    focus = (focus + n - 1u) % n;
+                } else {
+                    focus = (focus + 1u) % n;
+                }
                 dirty = true;
             } else if (code == '\n' || code == '\r') {
-                i18n_set_lang(focus == 0 ? LANG_ES : LANG_EN);
+                i18n_set_lang((enum lang_id)focus);
                 return;
-            } else if (code == '1' || code == 'a' || code == 'A' ||
-                       code == 'w' || code == 'W' || code == 'k' || code == 'K') {
-                focus = 0;
-                dirty = true;
-            } else if (code == '2' || code == 'e' || code == 'E' ||
-                       code == 's' || code == 'S' || code == 'j' || code == 'J') {
-                focus = 1;
+            } else if (code >= '1' && code <= '9' &&
+                       (code - '1') < n) {
+                focus = code - '1';
                 dirty = true;
             }
         } else if (fb_available() && mouse_has_event()) {
             struct mouse_event ev = mouse_get_event();
             u32 hit = lang_hit(ev.x, ev.y);
 
-            if (hit < 2u && hit != focus) {
+            if (hit < n && hit != focus) {
                 focus = hit;
                 dirty = true;
             }
-            if (ev.kind == MOUSE_EV_DOWN && ev.button == MOUSE_LEFT && hit < 2u) {
-                i18n_set_lang(hit == 0 ? LANG_ES : LANG_EN);
+            if (ev.kind == MOUSE_EV_DOWN && ev.button == MOUSE_LEFT && hit < n) {
+                i18n_set_lang((enum lang_id)hit);
                 return;
             }
         }
@@ -262,7 +278,7 @@ void lang_select_run(void)
             (mouse_x() != last_x || mouse_y() != last_y)) {
             u32 live = lang_hit(mouse_x(), mouse_y());
 
-            if (live < 2u && live != focus) {
+            if (live < n && live != focus) {
                 focus = live;
                 dirty = true;
             }

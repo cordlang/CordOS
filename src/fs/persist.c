@@ -178,7 +178,7 @@ void persist_init(void)
     s_icon_style = icon_style();
 
     if (!nosfs_disk_ready()) {
-        serial_write("persist: no disk\n");
+        serial_write("persist: no writable disk (live session; settings/users stay in RAM)\n");
         return;
     }
 

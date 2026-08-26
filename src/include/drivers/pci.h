@@ -4,8 +4,12 @@
 #include "types.h"
 
 #define PCI_VENDOR_INVALID 0xFFFFu
+#define PCI_CLASS_STORAGE  0x01u
 #define PCI_CLASS_NET      0x02u
 #define PCI_CLASS_SERIAL   0x0Cu
+#define PCI_SUBCLASS_IDE   0x01u
+#define PCI_SUBCLASS_SATA  0x06u
+#define PCI_PROG_AHCI      0x01u
 #define PCI_SUBCLASS_USB   0x03u
 #define PCI_SUBCLASS_ETH   0x00u
 #define PCI_SUBCLASS_WIFI  0x80u

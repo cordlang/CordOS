@@ -3,7 +3,7 @@
 
 #include "types.h"
 
-/* Called from phase6_init after the disk (or initrd) root is chosen. */
+/* Called from phase6_init after the system volume (or initrd) is chosen. */
 void persist_init(void);
 
 /* True when a writable NOSF volume is mounted. */

@@ -36,9 +36,8 @@ enum ob_step {
 #define HIT_NEXT   2u
 #define HIT_SKIP   3u
 #define HIT_FIELD  4u
-#define HIT_LANG0  5u
-#define HIT_LANG1  6u
-#define HIT_NET0   10u
+#define HIT_LANG   5u
+#define HIT_NET0   16u
 
 #define NAME_MAX 24u
 #define PASS_MAX 32u
@@ -54,6 +53,7 @@ enum ob_step {
 static const struct rgb OB_WHITE = { 0xF7, 0xF8, 0xFA };
 static const struct rgb OB_MUTED = { 0xC4, 0xC8, 0xD0 };
 static const struct rgb OB_INK   = { 0x1A, 0x1A, 0x1C };
+static const struct rgb OB_INK_DIM = { 0x4A, 0x4A, 0x52 };
 static const struct rgb OB_GLASS = { 0x1C, 0x24, 0x30 };
 
 static char s_name[NAME_MAX];
@@ -72,12 +72,9 @@ static u32 s_wifi_top;
 static u8 s_enter;
 static u32 s_enter_anim_ms;
 static bool s_caret;
-static bool s_light;
-static bool s_light_locked;
 static u8 *s_fade_from;
 static u32 s_check_elapsed;
 struct ob_geom;
-static void ob_sync_light(const struct ob_geom *g);
 
 static void wait_ms(u32 ms)
 {
@@ -178,24 +175,6 @@ static void ob_layout(struct ob_geom *g, enum ob_step step)
     if (g->btn_y + g->btn_h + 12u > h) {
         g->btn_y = (h > g->btn_h + 12u) ? (h - g->btn_h - 12u) : 0;
     }
-}
-
-static void ob_sync_light(const struct ob_geom *g)
-{
-    if (!s_light_locked) {
-        u32 band_y = g->title_y;
-        u32 band_h;
-
-        band_h = (g->content_y > g->title_y) ? (g->content_y - g->title_y + FONT_HEIGHT)
-                                             : 160u;
-        if (band_h < 96u) {
-            band_h = 96u;
-        }
-        s_light = draw_region_is_light(g->x0, band_y, g->cw, band_h);
-        s_light_locked = true;
-    }
-    draw_set_ui_light(s_light);
-    cursor_set_on_light(s_light);
 }
 
 #define BTN_GAP ui_gap()
@@ -410,17 +389,12 @@ static u8 enter_a(u8 a)
 
 static struct rgb chrome_col(void)
 {
-    return s_light ? OB_INK : OB_WHITE;
+    return OB_INK;
 }
 
 static struct rgb muted_col(void)
 {
-    if (s_light) {
-        struct rgb c = { 0x4A, 0x4A, 0x52 };
-
-        return c;
-    }
-    return OB_MUTED;
+    return OB_INK_DIM;
 }
 
 static void ob_label(u32 x, u32 y, const char *text, u32 scale)
@@ -487,11 +461,7 @@ static void ob_draw_pass_dots(u32 x, u32 y, u32 h, const char *pass)
 static void ob_draw_glass_pill(u32 x, u32 y, u32 w, u32 h, u8 focus)
 {
     u8 glass_a = mix_u8(38u, 86u, focus);
-    u8 rim_a = mix_u8(16u, 64u, focus);
-    struct rgb rim = draw_ui_is_light() ? OB_INK : OB_WHITE;
 
-    draw_round_fill(x > 0 ? x - 1u : 0, y > 0 ? y - 1u : 0, w + 2u, h + 2u,
-                    (h + 2u) / 2u, rim, rim_a);
     draw_glass(x, y, w, h, h / 2u, OB_GLASS, glass_a);
     if (w > 24u) {
         draw_round_fill(x + 12u, y + 1u, w - 24u, 1u, 0, OB_WHITE,
@@ -564,7 +534,6 @@ static void draw_step(enum ob_step step, u32 hit, u32 lang_focus, bool field_on,
     fb_compose_begin();
     draw_bg_login();
     fb_overlay(4, 10, 22, 22u);
-    ob_sync_light(&g);
 
     ob_draw_logo(g.logo_x, g.logo_y);
     ob_draw_dots(&g, step);
@@ -702,11 +671,14 @@ static u32 ob_hit(enum ob_step step, i32 mx, i32 my, u32 lang_focus)
         return HIT_BACK;
     }
     if (step == OB_LANG) {
-        if (in_rect(mx, my, g.x0, content_y, g.cw, ROW_H)) {
-            return HIT_LANG0;
-        }
-        if (in_rect(mx, my, g.x0, content_y + ROW_H + ROW_GAP, g.cw, ROW_H)) {
-            return HIT_LANG1;
+        u32 li;
+        u32 n = i18n_lang_count();
+
+        for (li = 0; li < n; ++li) {
+            if (in_rect(mx, my, g.x0, content_y + li * (ROW_H + ROW_GAP),
+                        g.cw, ROW_H)) {
+                return HIT_LANG + li;
+            }
         }
     }
     if ((step == OB_NAME || step == OB_PASS) &&
@@ -761,8 +733,7 @@ static enum ob_step step_back(enum ob_step step)
     return step;
 }
 
-#define WID_LANG0 1u
-#define WID_LANG1 2u
+#define WID_LANG  16u
 #define WID_NEXT  3u
 #define WID_BACK  4u
 #define WID_SKIP  5u
@@ -784,19 +755,19 @@ static bool ob_run_widgets(enum ob_step *step, u32 *lang_focus, bool *field_on,
     ui_begin(mouse_x(), mouse_y(), mouse_buttons(), time_uptime_ms());
 
     if (*step == OB_LANG) {
-        if (ui_button(WID_LANG0, g.x0, content_y, g.cw, ROW_H, "Español",
-                      *lang_focus == 0u, true)) {
-            *lang_focus = 0;
-            i18n_set_lang(LANG_ES);
-            (void)persist_set_u32("lang", 0);
-            changed = true;
-        }
-        if (ui_button(WID_LANG1, g.x0, content_y + ROW_H + ROW_GAP, g.cw, ROW_H,
-                      "English", *lang_focus == 1u, true)) {
-            *lang_focus = 1;
-            i18n_set_lang(LANG_EN);
-            (void)persist_set_u32("lang", 1);
-            changed = true;
+        u32 li;
+        u32 n = i18n_lang_count();
+
+        for (li = 0; li < n; ++li) {
+            if (ui_button(WID_LANG + li, g.x0,
+                          content_y + li * (ROW_H + ROW_GAP), g.cw, ROW_H,
+                          i18n_lang_name((enum lang_id)li),
+                          *lang_focus == li, true)) {
+                *lang_focus = li;
+                i18n_set_lang((enum lang_id)li);
+                (void)persist_set_u32("lang", li);
+                changed = true;
+            }
         }
     }
     if (b.back &&
@@ -820,7 +791,7 @@ static bool ob_run_widgets(enum ob_step *step, u32 *lang_focus, bool *field_on,
         ui_button(WID_NEXT, b.next_x, g.btn_y, b.bw, g.btn_h, b.next_lab, false,
                   true)) {
         if (*step == OB_LANG) {
-            i18n_set_lang(*lang_focus == 0 ? LANG_ES : LANG_EN);
+            i18n_set_lang((enum lang_id)*lang_focus);
             (void)persist_set_u32("lang", (u32)i18n_lang());
             *step = OB_WELCOME;
         } else if (*step == OB_WELCOME) {
@@ -889,7 +860,6 @@ static void commit_user(void)
     fb_compose_begin();
     draw_bg_login();
     fb_overlay(4, 10, 22, 22u);
-    ob_sync_light(&g);
     ob_draw_logo(g.logo_x, g.logo_y);
     tw = draw_text_width(i18n(MSG_OB_CREATING), 1);
     tx = (fb_width() > tw) ? (fb_width() - tw) / 2u : g.x0;
@@ -903,7 +873,7 @@ void onboarding_run(bool ask_lang)
 {
     enum ob_step step;
     enum ob_step prev;
-    u32 lang_focus = (i18n_lang() == LANG_EN) ? 1u : 0u;
+    u32 lang_focus = (u32)i18n_lang();
     u32 last_tick;
     bool field_on = true;
     bool dirty = true;
@@ -915,7 +885,6 @@ void onboarding_run(bool ask_lang)
     bool first = true;
 
     s_ask_lang = ask_lang;
-    s_light_locked = false;
     s_name[0] = '\0';
     s_nlen = 0;
     s_pass[0] = '\0';
@@ -958,7 +927,8 @@ void onboarding_run(bool ask_lang)
         last_tick = now_ms;
         hover = ob_hit(step, mouse_x(), mouse_y(), lang_focus);
         if (hover == HIT_NEXT || hover == HIT_SKIP || hover == HIT_BACK ||
-            hover == HIT_FIELD || hover == HIT_LANG0 || hover == HIT_LANG1 ||
+            hover == HIT_FIELD ||
+            (hover >= HIT_LANG && hover < HIT_NET0) ||
             hover >= HIT_NET0) {
             cursor_set_kind(CURSOR_KIND_POINTER);
         } else {
@@ -1044,7 +1014,12 @@ void onboarding_run(bool ask_lang)
                 dirty = true;
             } else if (key == '\t') {
                 if (step == OB_LANG) {
-                    lang_focus ^= 1u;
+                    u32 n = i18n_lang_count();
+
+                    if (n == 0u) {
+                        n = 1u;
+                    }
+                    lang_focus = (lang_focus + 1u) % n;
                     dirty = true;
                 } else if (step == OB_WIFI && net_count() > 0u) {
                     s_net = (s_net + 1u) % net_count();
@@ -1067,7 +1042,7 @@ void onboarding_run(bool ask_lang)
                 dirty = true;
             } else if (key == '\n' || key == '\r') {
                 if (step == OB_LANG) {
-                    i18n_set_lang(lang_focus == 0 ? LANG_ES : LANG_EN);
+                    i18n_set_lang((enum lang_id)lang_focus);
                     (void)persist_set_u32("lang", (u32)i18n_lang());
                     step = OB_WELCOME;
                     dirty = true;

@@ -15,6 +15,7 @@
  *   0xFFFF800000100000  framebuffer  (fb.c, size depends on the video mode)
  *   0xFFFF800010000000  e1000 NIC    (e1000.c)
  *   0xFFFF800020000000  EHCI USB     (here)
+ *   0xFFFF800030000000  AHCI SATA    (ahci.c)
  *
  * This used to be 0xFFFF800000800000, which is FB_VIRT_BASE + 0x700000 —
  * exactly inside the framebuffer window. Mapping the BAR there silently
