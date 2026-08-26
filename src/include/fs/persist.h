@@ -1,5 +1,5 @@
-#ifndef NUEVOOS_PERSIST_H
-#define NUEVOOS_PERSIST_H
+#ifndef CORDOS_PERSIST_H
+#define CORDOS_PERSIST_H
 
 #include "types.h"
 

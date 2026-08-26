@@ -157,8 +157,8 @@ def main() -> None:
 
     with open(OUT_H, "w", encoding="utf-8") as f:
         f.write(
-            "#ifndef NUEVOOS_CURSOR_H\n"
-            "#define NUEVOOS_CURSOR_H\n\n"
+            "#ifndef CORDOS_CURSOR_H\n"
+            "#define CORDOS_CURSOR_H\n\n"
             "#include \"types.h\"\n\n"
             f"#define CURSOR_W     {max_w}u\n"
             f"#define CURSOR_H     {TARGET_H}u\n"

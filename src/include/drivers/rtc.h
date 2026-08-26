@@ -1,5 +1,5 @@
-#ifndef NUEVOOS_RTC_H
-#define NUEVOOS_RTC_H
+#ifndef CORDOS_RTC_H
+#define CORDOS_RTC_H
 
 #include "types.h"
 

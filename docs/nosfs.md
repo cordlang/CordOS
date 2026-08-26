@@ -138,7 +138,7 @@ No-ops when `persist_available()` is false (live ISO, no internal disk).
 make ARCH=x86_64 out/persist.img
 make ARCH=x86_64 run-persist
 # equivalent:
-qemu-system-x86_64 -cdrom out/nuevoos64.iso \
+qemu-system-x86_64 -cdrom out/cordos.iso \
   -drive file=out/persist.img,format=raw,if=ide \
   -boot order=d -vga std -serial stdio
 ```

@@ -1,5 +1,5 @@
-#ifndef NUEVOOS_WALLPAPER_H
-#define NUEVOOS_WALLPAPER_H
+#ifndef CORDOS_WALLPAPER_H
+#define CORDOS_WALLPAPER_H
 
 #include "types.h"
 

@@ -1,4 +1,4 @@
-# NuevoOS — Contrato fases 4–11 (multi-agente)
+# CordOS — Contrato fases 4–11 (multi-agente)
 
 **Arquitectura objetivo:** solo ampliar `ARCH=x86_64`. No romper i386.
 **No commits** salvo que el usuario lo pida.
@@ -71,7 +71,7 @@ Puede vivir en kernel (`shell_run`) leyendo teclado hasta que F5/user existan; s
 
 ### Bootloader (Fase 8)
 
-BIOS MBR 512B + stage2 en sectores siguientes; carga `nuevoos64.bin` ELF desde LBA crudo.
+BIOS MBR 512B + stage2 en sectores siguientes; carga `cordos.bin` ELF desde LBA crudo.
 Target QEMU: `make disk` / `make run-bios` (`-drive file=disk.img -boot order=c`).
 Mantener GRUB como default `make run`. Detalle: `docs/boot_protocol.md`, nota `agent-notes/PHASE8_F8.md`.
 Requiere **NASM**.

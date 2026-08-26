@@ -1,5 +1,5 @@
-#ifndef NUEVOOS_BRAND_H
-#define NUEVOOS_BRAND_H
+#ifndef CORDOS_BRAND_H
+#define CORDOS_BRAND_H
 
 #include "types.h"
 

@@ -1,4 +1,4 @@
-# NuevoOS — Roadmap completo
+# CordOS — Roadmap completo
 
 Documento único de planificación. Define principios, estado actual, fases,
 prioridades, módulos y criterios de aceptación. No se basa en Linux, macOS ni
@@ -16,7 +16,7 @@ Windows: se construye desde cero como sistema freestanding.
 | Independencia | GRUB y tools de host son andamiaje de desarrollo; el producto final no los necesita. |
 | Claridad | Preferir diseño simple y documentado antes que features prematuras. |
 
-### Qué NO es NuevoOS
+### Qué NO es CordOS
 
 - No es un clone de Linux, ni un fork, ni un userspace sobre otro kernel.
 - No reutiliza drivers, syscalls ni layouts de Windows/macOS/Linux.
@@ -150,7 +150,7 @@ criterio de “hecho”.
 | `context` | Save/restore registros, switch | Asm + C (`switch.s`) |
 | `scheduler` | Round-robin cooperativo → preemptivo | Usar PIT/APIC timer |
 | `user_mode` | Ring 3, TSS/IST, iret/sysret | Aislamiento real (post-MVP OK) |
-| `elf_loader` | Cargar ELF propio o formato NuevoOS | Ver Fase 5 |
+| `elf_loader` | Cargar ELF propio o formato CordOS | Ver Fase 5 |
 
 **Criterio de hecho:** dos tareas kernel conmutan; luego un programa en ring 3 corre sin corromper el kernel.
 
@@ -226,8 +226,8 @@ criterio de “hecho”.
 | Módulo | Funciones / piezas | Notas |
 |---|---|---|
 | Stage 1 | MBR/GPT + BIOS o UEFI | MVP: BIOS MBR 512B |
-| Stage 2 | Cargar kernel, setup memoria/video | Carga `nuevoos64.bin` |
-| Protocolo | Header NuevoOS (dejar Multiboot) | Documentar |
+| Stage 2 | Cargar kernel, setup memoria/video | Carga `cordos.bin` |
+| Protocolo | Header CordOS (dejar Multiboot) | Documentar |
 | Installer | Escribir bootloader a imagen disco | |
 
 **Criterio de hecho:** ISO o disco arranca **sin GRUB**; mismo kernel.
@@ -371,7 +371,7 @@ Actualizar esta sección cuando se cierre cada decisión.
 
 ## 10. Resumen ejecutivo
 
-NuevoOS ya demostró arranque freestanding. El camino es:
+CordOS ya demostró arranque freestanding. El camino es:
 
 **cimientos → interrupciones/entrada → memoria → (x86_64) → procesos/syscalls → FS/shell → bootloader propio → red/SMP/seguridad.**
 

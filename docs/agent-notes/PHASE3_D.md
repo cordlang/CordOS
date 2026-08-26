@@ -43,15 +43,15 @@ No se edita `boot64.s`.
 ## Build (E)
 
 - `ARCH ?= x86_64` por defecto
-- `make ARCH=i386` path antiguo intacto (`nuevoos.iso`, Multiboot1)
+- `make ARCH=i386` path antiguo intacto (`cordos32.iso`, Multiboot1)
 - x86_64: `CC64`/`LD64` desde `$(HOME)/opt/cross64/bin` si existe, si no PATH
-- Objetos B+C+D en `KERNEL64_OBJS`; ISO `build/nuevoos64.iso` + `grub64.cfg`
+- Objetos B+C+D en `KERNEL64_OBJS`; ISO `out/cordos.iso` + `grub64.cfg`
 - `build.ps1`: i386 en Windows; x86_64 → mensaje WSL/`make`
 - README: nota corta `ARCH`
 
 ## Verificación
 
-- `make ARCH=i386` → `build/nuevoos.iso` OK
-- `make ARCH=x86_64` → `build/nuevoos64.iso` OK (host `gcc`/`ld` fallback mientras A instala `~/opt/cross64`)
-- `grub-file --is-x86-multiboot2 build/nuevoos64.bin` OK when checked after link
+- `make ARCH=i386` → `out/cordos32.iso` OK
+- `make ARCH=x86_64` → `out/cordos.iso` OK (host `gcc`/`ld` fallback mientras A instala `~/opt/cross64`)
+- `grub-file --is-x86-multiboot2 out/cordos.bin` OK when checked after link
 - No se modificó `boot64.s`

@@ -1,5 +1,5 @@
-#ifndef NUEVOOS_ANIMATION_H
-#define NUEVOOS_ANIMATION_H
+#ifndef CORDOS_ANIMATION_H
+#define CORDOS_ANIMATION_H
 
 #include "types.h"
 

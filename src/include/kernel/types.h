@@ -1,5 +1,5 @@
-#ifndef NUEVOOS_TYPES_H
-#define NUEVOOS_TYPES_H
+#ifndef CORDOS_TYPES_H
+#define CORDOS_TYPES_H
 
 typedef unsigned char u8;
 typedef unsigned short u16;

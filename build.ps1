@@ -65,11 +65,11 @@ $objs = @(
     "build\kernel.o"
 )
 
-& $ld -T "linker.ld" -m elf_i386 --build-id=none -o "build\nuevoos.bin" @objs
+& $ld -T "linker.ld" -m elf_i386 --build-id=none -o "build\cordos32.bin" @objs
 
-& $grubFile --is-x86-multiboot "build\nuevoos.bin"
-Copy-Item -Force "build\nuevoos.bin" "iso\boot\nuevoos.bin"
+& $grubFile --is-x86-multiboot "build\cordos32.bin"
+Copy-Item -Force "build\cordos32.bin" "iso\boot\cordos32.bin"
 Copy-Item -Force "grub.cfg" "iso\boot\grub\grub.cfg"
-& $grubMkrescue -o "build\nuevoos.iso" "iso"
+& $grubMkrescue -o "build\cordos32.iso" "iso"
 
-Write-Host "ISO creada: build\nuevoos.iso (ARCH=i386)"
+Write-Host "ISO creada: build\cordos32.iso (ARCH=i386)"

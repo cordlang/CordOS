@@ -46,4 +46,4 @@ Tras `make mbr disk`, QEMU muestra banner/kernel en VGA (long mode, HLT en idle)
 - Kernel ≤ 256 KiB en buffer bajo.
 - Sin FAT/GPT; LBA crudo.
 - Sin tags Multiboot2 de módulos/framebuffer en path BIOS.
-- Shim Multiboot2, no protocolo nativo NuevoOS todavía.
+- Shim Multiboot2, no protocolo nativo CordOS todavía.

@@ -1,5 +1,5 @@
-#ifndef NUEVOOS_VGA_H
-#define NUEVOOS_VGA_H
+#ifndef CORDOS_VGA_H
+#define CORDOS_VGA_H
 
 #include "types.h"
 

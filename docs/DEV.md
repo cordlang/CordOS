@@ -1,4 +1,4 @@
-# NuevoOS — Guía de desarrollador
+# CordOS — Guía de desarrollador
 
 Mapa del árbol, convenciones y cómo añadir syscalls o drivers. Arquitectura objetivo: **x86_64** (`ARCH=x86_64`). i386 se mantiene como demo congelada.
 

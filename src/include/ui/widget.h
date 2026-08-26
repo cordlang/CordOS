@@ -1,5 +1,5 @@
-#ifndef NUEVOOS_WIDGET_H
-#define NUEVOOS_WIDGET_H
+#ifndef CORDOS_WIDGET_H
+#define CORDOS_WIDGET_H
 
 #include "draw.h"
 #include "types.h"

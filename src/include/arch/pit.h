@@ -1,5 +1,5 @@
-#ifndef NUEVOOS_PIT_H
-#define NUEVOOS_PIT_H
+#ifndef CORDOS_PIT_H
+#define CORDOS_PIT_H
 
 #include "types.h"
 

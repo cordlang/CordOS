@@ -9,7 +9,7 @@
 |---|---|
 | `src/boot64.s` | Header Multiboot2, stub 32-bit, PML4/PDPT/PD (1 GiB identity 2 MiB), long mode, `call kmain64` (RDI = mb2 info) |
 | `linker64.ld` | `ENTRY(_start64)`, carga a 1M, `_kernel_start` / `_kernel_end` |
-| `grub64.cfg` | `multiboot2 /boot/nuevoos64.bin` |
+| `grub64.cfg` | `multiboot2 /boot/cordos.bin` |
 | `src/kernel64.c` | `kmain64`: VGA clear, imprime globals `config`, resume mb2 `total_size`, `hlt` |
 | `src/vga64.c` | VGA texto 64-bit; implementa API de `vga.h` (linkear en vez de `vga.o`) |
 | `src/include/multiboot2.h` | Magics, tags, mmap entry, `multiboot2_tag_next`, `multiboot2_is_valid` |
@@ -21,7 +21,7 @@
 
 Toolchain A (`~/opt/cross64`) aún no estaba instalada al verificar. Smoke con binutils host:
 
-- `as --64` + link `elf_x86_64` → `build/nuevoos64.bin`
+- `as --64` + link `elf_x86_64` → `out/cordos.bin`
 - `grub-file --is-x86-multiboot2` → **OK**
 - Símbolos: `_start64`, `kmain64`, `_kernel_start` @ 1M, `_kernel_end`
 
@@ -58,19 +58,19 @@ build/vga64.o: src/vga64.c | build
 build/kernel64.o: src/kernel64.c | build
 	$(CC64) $(CFLAGS64) -c $< -o $@
 
-build/nuevoos64.bin: $(KERNEL64_OBJS) linker64.ld
+out/cordos.bin: $(KERNEL64_OBJS) linker64.ld
 	$(LD64) -T linker64.ld -m elf_x86_64 --build-id=none -o $@ $(KERNEL64_OBJS)
 
-check64: build/nuevoos64.bin
+check64: out/cordos.bin
 	$(GRUB_FILE) --is-x86-multiboot2 $<
 
-build/nuevoos64.iso: build/nuevoos64.bin grub64.cfg | build
+out/cordos.iso: out/cordos.bin grub64.cfg | build
 	mkdir -p iso64/boot/grub
-	cp build/nuevoos64.bin iso64/boot/nuevoos64.bin
+	cp out/cordos.bin out/isoroot/boot/cordos.bin
 	cp grub64.cfg iso64/boot/grub/grub.cfg
 	$(GRUB_MKRESCUE) -o $@ iso64
 
-run64: build/nuevoos64.iso
+run64: out/cordos.iso
 	$(QEMU64) -cdrom $<
 ```
 

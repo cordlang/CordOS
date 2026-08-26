@@ -1,5 +1,5 @@
-#ifndef NUEVOOS_SPINLOCK_H
-#define NUEVOOS_SPINLOCK_H
+#ifndef CORDOS_SPINLOCK_H
+#define CORDOS_SPINLOCK_H
 
 #include "types.h"
 

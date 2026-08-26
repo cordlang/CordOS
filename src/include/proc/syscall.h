@@ -1,5 +1,5 @@
-#ifndef NUEVOOS_SYSCALL_H
-#define NUEVOOS_SYSCALL_H
+#ifndef CORDOS_SYSCALL_H
+#define CORDOS_SYSCALL_H
 
 #include "types.h"
 #include "isr.h"

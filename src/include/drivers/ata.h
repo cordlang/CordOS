@@ -1,5 +1,5 @@
-#ifndef NUEVOOS_ATA_H
-#define NUEVOOS_ATA_H
+#ifndef CORDOS_ATA_H
+#define CORDOS_ATA_H
 
 #include "types.h"
 

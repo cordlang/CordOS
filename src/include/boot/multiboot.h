@@ -1,5 +1,5 @@
-#ifndef NUEVOOS_MULTIBOOT_H
-#define NUEVOOS_MULTIBOOT_H
+#ifndef CORDOS_MULTIBOOT_H
+#define CORDOS_MULTIBOOT_H
 
 #include "types.h"
 

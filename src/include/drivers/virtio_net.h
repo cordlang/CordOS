@@ -1,5 +1,5 @@
-#ifndef NUEVOOS_VIRTIO_NET_H
-#define NUEVOOS_VIRTIO_NET_H
+#ifndef CORDOS_VIRTIO_NET_H
+#define CORDOS_VIRTIO_NET_H
 
 #include "types.h"
 

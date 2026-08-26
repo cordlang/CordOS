@@ -1,5 +1,5 @@
-#ifndef NUEVOOS_WLAN_H
-#define NUEVOOS_WLAN_H
+#ifndef CORDOS_WLAN_H
+#define CORDOS_WLAN_H
 
 #include "types.h"
 

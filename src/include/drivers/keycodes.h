@@ -1,5 +1,5 @@
-#ifndef NUEVOOS_KEYCODES_H
-#define NUEVOOS_KEYCODES_H
+#ifndef CORDOS_KEYCODES_H
+#define CORDOS_KEYCODES_H
 
 #include "types.h"
 

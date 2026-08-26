@@ -1,4 +1,4 @@
-; NuevoOS — Stage1 BIOS MBR (512 bytes)
+; CordOS — Stage1 BIOS MBR (512 bytes)
 ; Loads stage2 from LBA 1 into 0x7E00 and jumps to 0000:7E00
 ; (matches stage2 ORG 0x7E00).
 ; Assembled with NASM: nasm -f bin -o build/mbr.bin boot/mbr.s

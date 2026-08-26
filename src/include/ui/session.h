@@ -1,5 +1,5 @@
-#ifndef NUEVOOS_SESSION_H
-#define NUEVOOS_SESSION_H
+#ifndef CORDOS_SESSION_H
+#define CORDOS_SESSION_H
 
 #include "types.h"
 

@@ -5,7 +5,7 @@ sección **Estado por agente** al terminar su parte.
 
 ## Objetivo
 
-Migrar NuevoOS a **x86_64 long mode** según `ROADMAP.md` Fase 3.
+Migrar CordOS a **x86_64 long mode** según `ROADMAP.md` Fase 3.
 Congelar i386 como demo (`ARCH=i386`) y hacer **x86_64 el build principal**.
 
 ## Decisiones cerradas (no reinventar)

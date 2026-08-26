@@ -47,7 +47,7 @@ $ i686-elf-gcc --version | head -1
 i686-elf-gcc (GCC) 13.2.0
 ```
 
-Orchestrator confirmation: toolchain verified; `x86_64-elf-gcc` built `nuevoos64.iso` successfully. Phase 3 B/C/D/E reported DONE.
+Orchestrator confirmation: toolchain verified; `x86_64-elf-gcc` built `cordos.iso` successfully. Phase 3 B/C/D/E reported DONE.
 
 ## Ready for other agents?
 

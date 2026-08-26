@@ -1,4 +1,4 @@
-; NuevoOS — Stage2 BIOS loader (real → 32-bit protected mode)
+; CordOS — Stage2 BIOS loader (real → 32-bit protected mode)
 ; Loaded by MBR at 0x7E00. Loads ELF64 kernel from disk, builds a minimal
 ; Multiboot2 info (mmap from E820), jumps to e_entry with Multiboot2 magic.
 ;

@@ -1,5 +1,5 @@
-#ifndef NUEVOOS_FONT_H
-#define NUEVOOS_FONT_H
+#ifndef CORDOS_FONT_H
+#define CORDOS_FONT_H
 
 #include "types.h"
 

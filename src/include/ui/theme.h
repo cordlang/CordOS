@@ -1,5 +1,5 @@
-#ifndef NUEVOOS_THEME_H
-#define NUEVOOS_THEME_H
+#ifndef CORDOS_THEME_H
+#define CORDOS_THEME_H
 
 #include "types.h"
 

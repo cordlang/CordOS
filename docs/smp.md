@@ -17,12 +17,12 @@ El self-test corre en `phase10_init()` (lock → unlock dos veces).
 
 El kernel arranca en un solo núcleo aunque QEMU ofrezca más CPUs. Eso es
 esperado en este MVP: sin trampolín AP ni SIPI, los APs quedan en el wait
-loop del firmware/QEMU y NuevoOS no los usa.
+loop del firmware/QEMU y CordOS no los usa.
 
 ```bash
 # Path Multiboot/GRUB habitual (ajusta el target de make si cambia)
 make ARCH=x86_64
-qemu-system-x86_64 -cdrom nuevoos.iso -smp 2 -serial stdio
+qemu-system-x86_64 -cdrom cordos32.iso -smp 2 -serial stdio
 ```
 
 En consola VGA deberías ver algo como:

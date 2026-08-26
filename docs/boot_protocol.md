@@ -1,4 +1,4 @@
-# NuevoOS BIOS boot protocol (Fase 8 MVP)
+# CordOS BIOS boot protocol (Fase 8 MVP)
 
 **Status:** experimental. Default development path remains **GRUB** (`make run`).
 BIOS disk boot is available via `make disk` / `make run-bios`.
@@ -9,7 +9,7 @@ BIOS disk boot is available via `make disk` / `make run-bios`.
 |---|---|---|
 | 0 | Stage1 MBR (`boot/mbr.s` → `build/mbr.bin`) | 512 B |
 | 1–64 | Stage2 (`boot/stage2.s` → `build/stage2.bin`) | 32 KiB |
-| 65+ | Kernel ELF (`build/nuevoos64.bin`) | variable (≤ 256 KiB for stage2 buffer) |
+| 65+ | Kernel ELF (`out/cordos.bin`) | variable (≤ 256 KiB for stage2 buffer) |
 
 Built by `scripts/mkdisk.sh` (patches stage2 `NOSP` fields with kernel LBA + sector count).
 
@@ -25,9 +25,9 @@ Stage2 does **not** implement a full Multiboot2 bootloader. For MVP it:
    - `EAX` = `0x36d76289` (Multiboot2 bootloader magic)
    - `EBX` = physical address of the info structure (`0x2000`)
 
-So the existing `boot64.s` / PMM path keeps working without a separate NuevoOS kernel entry yet.
+So the existing `boot64.s` / PMM path keeps working without a separate CordOS kernel entry yet.
 
-## Future NuevoOS-native protocol
+## Future CordOS-native protocol
 
 A dedicated magic (e.g. `EAX = 'NOSB'`) and info blob may replace the Multiboot2 shim later. Until then, treat Multiboot2 register handoff as a **compatibility layer**, not a commitment to recreate GRUB.
 

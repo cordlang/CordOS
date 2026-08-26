@@ -1,5 +1,5 @@
-#ifndef NUEVOOS_POWER_H
-#define NUEVOOS_POWER_H
+#ifndef CORDOS_POWER_H
+#define CORDOS_POWER_H
 
 #include "types.h"
 

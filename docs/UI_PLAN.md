@@ -1,4 +1,4 @@
-# NuevoOS — Plan de UI (arranque → home → sistema)
+# CordOS — Plan de UI (arranque → home → sistema)
 
 Documento único de planificación de experiencia e interfaz.  
 **Estado:** Ola 0 (texto) hecha; **Ola 1** en curso (login/home gráficos con framebuffer).  
@@ -136,7 +136,7 @@ La shell de texto (`shell.c`) permanece como **consola de emergencia** (`Ctrl+Al
 2. Bootloader (GRUB hoy; nativo después): pantalla negra o menú mínimo.
 3. Entrega control al kernel con framebuffer si está disponible.
 
-**UI nuestra aún no:** opcional mensaje estático “NuevoOS” en stage2 más adelante.
+**UI nuestra aún no:** opcional mensaje estático “CordOS” en stage2 más adelante.
 
 ### Fase B — Kernel early (invisible o casi)
 
@@ -174,7 +174,7 @@ No es un tip ni un “presiona Enter”: es el umbral de sesión, como en Window
 ┌──────────────────────────────────────────────────────────┐
 │  [fondo atmosférico — mismo lenguaje que Home]           │
 │                                                          │
-│              NUEVOOS                                     │
+│              CORDOS                                     │
 │                                                          │
 │         ┌────────────────────────────┐                   │
 │         │  Usuario                   │                   │
@@ -248,7 +248,7 @@ Composición única (no dashboard):
 | `app.files` | Explorador initrd/FS | P1 | teclado | Home |
 | `app.term` | Terminal (shell texto embebida o TTY) | P1 | teclado | Home |
 | `app.settings` | Ajustes (idioma, tema, teclado) | P2 | teclado | Home |
-| `app.about` | Acerca de NuevoOS | P1 | teclado | Home |
+| `app.about` | Acerca de CordOS | P1 | teclado | Home |
 | `sys.power` | Apagar / reiniciar | P1 | confirmar | off |
 | `sys.logout` | Cerrar sesión → vuelve a login | P1 | confirmar | `auth.login` |
 | `sys.crash` | Panic humanizado | P1 | Enter shell | — |
@@ -274,7 +274,7 @@ Composición única (no dashboard):
 ┌──────────────────────────────────────────────────────────┐
 │  [fondo atmosférico]                                     │
 │                                                          │
-│         NUEVOOS (display)                                │
+│         CORDOS (display)                                │
 │         Listo — teclado activo                           │
 │                                                          │
 │         › Archivos                                       │

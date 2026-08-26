@@ -1,5 +1,5 @@
-#ifndef NUEVOOS_SMP_H
-#define NUEVOOS_SMP_H
+#ifndef CORDOS_SMP_H
+#define CORDOS_SMP_H
 
 #include "types.h"
 

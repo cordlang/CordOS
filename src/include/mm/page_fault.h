@@ -1,5 +1,5 @@
-#ifndef NUEVOOS_PAGE_FAULT_H
-#define NUEVOOS_PAGE_FAULT_H
+#ifndef CORDOS_PAGE_FAULT_H
+#define CORDOS_PAGE_FAULT_H
 
 #include "isr.h"
 

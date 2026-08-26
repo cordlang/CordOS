@@ -1,5 +1,5 @@
-#ifndef NUEVOOS_SERIAL_H
-#define NUEVOOS_SERIAL_H
+#ifndef CORDOS_SERIAL_H
+#define CORDOS_SERIAL_H
 
 #include "types.h"
 

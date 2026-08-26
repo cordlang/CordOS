@@ -1,5 +1,5 @@
-#ifndef NUEVOOS_ICONS_H
-#define NUEVOOS_ICONS_H
+#ifndef CORDOS_ICONS_H
+#define CORDOS_ICONS_H
 
 #include "types.h"
 

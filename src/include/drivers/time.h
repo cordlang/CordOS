@@ -1,5 +1,5 @@
-#ifndef NUEVOOS_TIME_H
-#define NUEVOOS_TIME_H
+#ifndef CORDOS_TIME_H
+#define CORDOS_TIME_H
 
 #include "types.h"
 

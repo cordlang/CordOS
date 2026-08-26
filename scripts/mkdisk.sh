@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# NuevoOS — assemble disk.img: MBR + stage2 + kernel ELF
+# CordOS — assemble disk.img: MBR + stage2 + kernel ELF
 # Usage: scripts/mkdisk.sh [kernel_elf] [out_img]
 # Defaults: out/cordos.bin → out/disk.img
 #

@@ -1,5 +1,5 @@
-#ifndef NUEVOOS_PCNET_H
-#define NUEVOOS_PCNET_H
+#ifndef CORDOS_PCNET_H
+#define CORDOS_PCNET_H
 
 #include "types.h"
 

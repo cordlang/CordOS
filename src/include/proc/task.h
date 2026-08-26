@@ -1,5 +1,5 @@
-#ifndef NUEVOOS_TASK_H
-#define NUEVOOS_TASK_H
+#ifndef CORDOS_TASK_H
+#define CORDOS_TASK_H
 
 #include "types.h"
 

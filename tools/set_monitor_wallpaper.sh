@@ -34,4 +34,4 @@ PY
 # Point japan default generator at this asset next time too
 touch build/wallpaper.rgb
 make -j4
-ls -la build/wallpaper.rgb assets/backgrounds/default.png build/nuevoos64.iso
+ls -la build/wallpaper.rgb assets/backgrounds/default.png out/cordos.iso

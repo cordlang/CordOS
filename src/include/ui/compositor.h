@@ -1,5 +1,5 @@
-#ifndef NUEVOOS_COMPOSITOR_H
-#define NUEVOOS_COMPOSITOR_H
+#ifndef CORDOS_COMPOSITOR_H
+#define CORDOS_COMPOSITOR_H
 
 #include "types.h"
 

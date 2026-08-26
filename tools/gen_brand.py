@@ -72,8 +72,8 @@ def main() -> None:
 
     with open(BRAND_H, "w", encoding="utf-8") as f:
         f.write(
-            "#ifndef NUEVOOS_BRAND_H\n"
-            "#define NUEVOOS_BRAND_H\n\n"
+            "#ifndef CORDOS_BRAND_H\n"
+            "#define CORDOS_BRAND_H\n\n"
             "#include \"types.h\"\n\n"
             f"#define BRAND_LOGO_W {logo.width}u\n"
             f"#define BRAND_LOGO_H {logo.height}u\n"

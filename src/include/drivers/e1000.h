@@ -1,5 +1,5 @@
-#ifndef NUEVOOS_E1000_H
-#define NUEVOOS_E1000_H
+#ifndef CORDOS_E1000_H
+#define CORDOS_E1000_H
 
 #include "types.h"
 

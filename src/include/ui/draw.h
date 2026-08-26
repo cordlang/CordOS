@@ -1,5 +1,5 @@
-#ifndef NUEVOOS_DRAW_H
-#define NUEVOOS_DRAW_H
+#ifndef CORDOS_DRAW_H
+#define CORDOS_DRAW_H
 
 #include "theme.h"
 #include "types.h"

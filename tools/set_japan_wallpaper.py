@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Install the Japanese street photo as NuevoOS default wallpaper."""
+"""Install the Japanese street photo as CordOS default wallpaper."""
 from __future__ import annotations
 
 import os

@@ -1,5 +1,5 @@
-#ifndef NUEVOOS_MOUSE_H
-#define NUEVOOS_MOUSE_H
+#ifndef CORDOS_MOUSE_H
+#define CORDOS_MOUSE_H
 
 #include "types.h"
 

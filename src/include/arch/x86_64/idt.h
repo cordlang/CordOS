@@ -1,5 +1,5 @@
-#ifndef NUEVOOS_ARCH_X86_64_IDT_H
-#define NUEVOOS_ARCH_X86_64_IDT_H
+#ifndef CORDOS_ARCH_X86_64_IDT_H
+#define CORDOS_ARCH_X86_64_IDT_H
 
 /*
  * Long-mode IDT implementation: src/arch/x86_64/idt64.c

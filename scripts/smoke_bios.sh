@@ -2,9 +2,9 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-IMG=/tmp/nuevoos-disk.img
+IMG=/tmp/cordos-disk.img
 cp -f build/disk.img "$IMG"
-QMP=/tmp/nos-qmp.sock
+QMP=/tmp/cordos-qmp.sock
 rm -f "$QMP"
 
 qemu-system-x86_64 \
@@ -20,7 +20,7 @@ python3 - <<'PY'
 import socket, json, time, select
 
 s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-s.connect("/tmp/nos-qmp.sock")
+s.connect("/tmp/cordos-qmp.sock")
 s.settimeout(2.0)
 buf = b""
 

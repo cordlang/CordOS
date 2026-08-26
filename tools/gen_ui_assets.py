@@ -107,8 +107,8 @@ def raster_font():
 
     with open(FONT_H, "w", encoding="utf-8") as f:
         f.write(
-            "#ifndef NUEVOOS_FONT_H\n"
-            "#define NUEVOOS_FONT_H\n\n"
+            "#ifndef CORDOS_FONT_H\n"
+            "#define CORDOS_FONT_H\n\n"
             "#include \"types.h\"\n\n"
             f"#define FONT_WIDTH  {body_w}\n"
             f"#define FONT_HEIGHT {body_h}\n"

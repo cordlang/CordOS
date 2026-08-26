@@ -1,5 +1,5 @@
-#ifndef NUEVOOS_CURSOR_H
-#define NUEVOOS_CURSOR_H
+#ifndef CORDOS_CURSOR_H
+#define CORDOS_CURSOR_H
 
 #include "types.h"
 

@@ -1,5 +1,5 @@
-#ifndef NUEVOOS_HEAP_H
-#define NUEVOOS_HEAP_H
+#ifndef CORDOS_HEAP_H
+#define CORDOS_HEAP_H
 
 #include "types.h"
 

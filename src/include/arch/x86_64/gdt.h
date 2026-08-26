@@ -1,5 +1,5 @@
-#ifndef NUEVOOS_ARCH_X86_64_GDT_H
-#define NUEVOOS_ARCH_X86_64_GDT_H
+#ifndef CORDOS_ARCH_X86_64_GDT_H
+#define CORDOS_ARCH_X86_64_GDT_H
 
 /*
  * Long-mode GDT implementation: src/arch/x86_64/gdt64.c

@@ -1,5 +1,5 @@
-#ifndef NUEVOOS_ONBOARDING_H
-#define NUEVOOS_ONBOARDING_H
+#ifndef CORDOS_ONBOARDING_H
+#define CORDOS_ONBOARDING_H
 
 #include "types.h"
 

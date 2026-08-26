@@ -1,5 +1,5 @@
-#ifndef NUEVOOS_FB_CONSOLE_H
-#define NUEVOOS_FB_CONSOLE_H
+#ifndef CORDOS_FB_CONSOLE_H
+#define CORDOS_FB_CONSOLE_H
 
 #include "types.h"
 

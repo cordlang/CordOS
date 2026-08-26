@@ -21,8 +21,8 @@
 Magic `"NRD1"`, `u32 file_count`, records `(name[32], offset, size)`, luego payloads.  
 Contenido MVP:
 
-- `hello.txt` → `Hello from NuevoOS initrd!\n`
-- `motd` → `Welcome to NuevoOS\n`
+- `hello.txt` → `Hello from CordOS initrd!\n`
+- `motd` → `Welcome to CordOS\n`
 
 ## API shell (compatible F7)
 
@@ -115,9 +115,9 @@ Hooks mínimos: `wallpaper_set_login` / `icon_set_style` (draw.c) y lang en Sett
 ## QEMU / VirtualBox
 
 ```bash
-make ARCH=x86_64 out/nuevoos64.bin
+make ARCH=x86_64 out/cordos.bin
 make ARCH=x86_64 out/persist.img
-qemu-system-x86_64 -cdrom out/nuevoos64.iso \
+qemu-system-x86_64 -cdrom out/cordos.iso \
   -drive file=out/persist.img,format=raw,if=ide -boot order=d
 ```
 

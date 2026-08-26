@@ -1,5 +1,5 @@
-#ifndef NUEVOOS_PCI_H
-#define NUEVOOS_PCI_H
+#ifndef CORDOS_PCI_H
+#define CORDOS_PCI_H
 
 #include "types.h"
 

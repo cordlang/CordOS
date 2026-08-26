@@ -1,5 +1,5 @@
-#ifndef NUEVOOS_USB_H
-#define NUEVOOS_USB_H
+#ifndef CORDOS_USB_H
+#define CORDOS_USB_H
 
 #include "types.h"
 

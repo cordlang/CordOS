@@ -1,5 +1,5 @@
-#ifndef NUEVOOS_INITRD_H
-#define NUEVOOS_INITRD_H
+#ifndef CORDOS_INITRD_H
+#define CORDOS_INITRD_H
 
 #include "types.h"
 

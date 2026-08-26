@@ -10,9 +10,6 @@ if (-not (Test-Path -LiteralPath $IsoPath)) {
     $IsoPath = Join-Path $PSScriptRoot "out\cordos.iso"
 }
 if (-not (Test-Path -LiteralPath $IsoPath)) {
-    $IsoPath = Join-Path $PSScriptRoot "dist\nuevoos64.iso"
-}
-if (-not (Test-Path -LiteralPath $IsoPath)) {
     $IsoPath = Join-Path $PSScriptRoot "kbuild\cordos.iso"
 }
 if (-not (Test-Path -LiteralPath $IsoPath)) {

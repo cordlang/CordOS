@@ -73,7 +73,7 @@ build/syscall_entry.o   # src/arch/x86_64/syscall_entry.s
 ### Verify
 
 ```
-make ARCH=x86_64 out/nuevoos64.bin
+make ARCH=x86_64 out/cordos.bin
 make ARCH=x86_64 userland
 ```
 

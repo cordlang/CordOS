@@ -1,5 +1,5 @@
-#ifndef NUEVOOS_GAMMA_H
-#define NUEVOOS_GAMMA_H
+#ifndef CORDOS_GAMMA_H
+#define CORDOS_GAMMA_H
 
 #include "types.h"
 

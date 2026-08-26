@@ -1,5 +1,5 @@
-#ifndef NUEVOOS_ARCH_X86_64_ISR_H
-#define NUEVOOS_ARCH_X86_64_ISR_H
+#ifndef CORDOS_ARCH_X86_64_ISR_H
+#define CORDOS_ARCH_X86_64_ISR_H
 
 /*
  * Long-mode ISR stubs: src/arch/x86_64/isr64.s + isr64.c

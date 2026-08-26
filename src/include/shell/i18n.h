@@ -1,5 +1,5 @@
-#ifndef NUEVOOS_I18N_H
-#define NUEVOOS_I18N_H
+#ifndef CORDOS_I18N_H
+#define CORDOS_I18N_H
 
 #include "types.h"
 #include "i18n_gen.h"

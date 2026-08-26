@@ -1,5 +1,5 @@
-#ifndef NUEVOOS_RTL8187_H
-#define NUEVOOS_RTL8187_H
+#ifndef CORDOS_RTL8187_H
+#define CORDOS_RTL8187_H
 
 #include "types.h"
 

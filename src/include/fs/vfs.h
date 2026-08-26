@@ -1,5 +1,5 @@
-#ifndef NUEVOOS_VFS_H
-#define NUEVOOS_VFS_H
+#ifndef CORDOS_VFS_H
+#define CORDOS_VFS_H
 
 #include "types.h"
 

@@ -1,5 +1,5 @@
-#ifndef NUEVOOS_VMM_H
-#define NUEVOOS_VMM_H
+#ifndef CORDOS_VMM_H
+#define CORDOS_VMM_H
 
 #include "types.h"
 

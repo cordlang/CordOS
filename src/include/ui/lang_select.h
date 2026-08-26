@@ -1,5 +1,5 @@
-#ifndef NUEVOOS_LANG_SELECT_H
-#define NUEVOOS_LANG_SELECT_H
+#ifndef CORDOS_LANG_SELECT_H
+#define CORDOS_LANG_SELECT_H
 
 #include "types.h"
 
