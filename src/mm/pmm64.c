@@ -15,6 +15,11 @@ volatile u32 free_frames_os = 0;
 
 static u8 frame_bitmap[(PMM_MAX_FRAMES + 7u) / 8u];
 static u32 bitmap_frames;
+static u32 last_free_hint;
+static u64 s_mb2_addr;
+static u64 s_mb2_size;
+static u64 s_kernel_start;
+static u64 s_kernel_end;
 
 static void pmm_set_used(u32 frame)
 {
@@ -171,21 +176,65 @@ void pmm_init(void *mb2_addr)
     pmm_mark_region_used(0, 0x100000);
     pmm_mark_region_used(kernel_start, kernel_end - kernel_start);
 
-    /* VMM allocates page-table frames from this pool. Keep GRUB's handoff
-     * structure alive until every post-PMM initializer has consumed it. */
-    pmm_mark_region_used((u64)mb2_addr, mb2_header->total_size);
+    /*
+     * Keep GRUB's handoff alive until FB/cmdline have read it. Do not free
+     * here: fb_init() still walks the framebuffer tag after pmm_init().
+     */
+    s_mb2_addr = (u64)mb2_addr;
+    s_mb2_size = mb2_header->total_size;
+    s_kernel_start = kernel_start;
+    s_kernel_end = kernel_end;
+    pmm_mark_region_used(s_mb2_addr, s_mb2_size);
+
+    last_free_hint = 0;
+    while (last_free_hint < bitmap_frames && pmm_is_used(last_free_hint)) {
+        last_free_hint++;
+    }
+}
+
+void pmm_release_boot_info(void)
+{
+    if (s_mb2_size == 0) {
+        return;
+    }
+
+    pmm_mark_region_free(s_mb2_addr, s_mb2_size);
+    /* Low 1MB / kernel may overlap the tag blob; keep them reserved. */
+    pmm_mark_region_used(0, 0x100000);
+    if (s_kernel_end > s_kernel_start) {
+        pmm_mark_region_used(s_kernel_start, s_kernel_end - s_kernel_start);
+    }
+    s_mb2_addr = 0;
+    s_mb2_size = 0;
 }
 
 u32 pmm_alloc_frame(void)
 {
+    u32 start = last_free_hint;
     u32 frame;
 
-    for (frame = 0; frame < bitmap_frames; ++frame) {
+    if (bitmap_frames == 0) {
+        return (u32)-1;
+    }
+    if (start >= bitmap_frames) {
+        start = 0;
+    }
+
+    frame = start;
+    do {
         if (!pmm_is_used(frame)) {
             pmm_set_used(frame);
+            last_free_hint = frame + 1u;
+            if (last_free_hint >= bitmap_frames) {
+                last_free_hint = 0;
+            }
             return frame;
         }
-    }
+        frame++;
+        if (frame >= bitmap_frames) {
+            frame = 0;
+        }
+    } while (frame != start);
 
     return (u32)-1;
 }
@@ -195,26 +244,29 @@ u64 pmm_alloc_contiguous(u32 count)
     u32 start;
     u32 i;
 
-    if (count == 0) {
+    if (count == 0 || count > bitmap_frames) {
         return 0;
     }
 
-    for (start = 0; start + count <= bitmap_frames; ++start) {
-        bool ok = true;
+    start = 0;
+    while (start + count <= bitmap_frames) {
+        u32 run = 0;
 
-        for (i = 0; i < count; ++i) {
-            if (pmm_is_used(start + i)) {
-                ok = false;
-                break;
-            }
+        while (run < count && !pmm_is_used(start + run)) {
+            run++;
         }
-
-        if (ok) {
+        if (run == count) {
             for (i = 0; i < count; ++i) {
                 pmm_set_used(start + i);
             }
+            last_free_hint = start + count;
+            if (last_free_hint >= bitmap_frames) {
+                last_free_hint = 0;
+            }
             return (u64)start * PAGE_SIZE;
         }
+        /* First used frame in the window: skip past it. */
+        start = start + run + 1u;
     }
 
     return 0;
@@ -223,6 +275,9 @@ u64 pmm_alloc_contiguous(u32 count)
 void pmm_free_frame(u32 frame)
 {
     pmm_set_free(frame);
+    if (frame < last_free_hint) {
+        last_free_hint = frame;
+    }
 }
 
 void *pmm_alloc_page(void)

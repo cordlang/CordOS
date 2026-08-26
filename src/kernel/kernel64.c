@@ -82,6 +82,7 @@ void kmain64(void *mb2_addr)
     }
 
     lang_from_cmdline = lang_try_cmdline(mb2_addr);
+    pmm_release_boot_info();
 
     /* Disk + net before onboarding so accounts and Wi-Fi probe work. */
     phase9_init();

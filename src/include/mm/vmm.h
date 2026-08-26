@@ -8,6 +8,7 @@
 #define PAGE_USER    0x004u
 #define PAGE_PWT     0x008u
 #define PAGE_PCD     0x010u
+#define PAGE_PS      0x080u
 
 #ifdef __x86_64__
 extern volatile u64 pml4_os;

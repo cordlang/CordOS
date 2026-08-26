@@ -8,7 +8,8 @@
 
 #define HEAP_MAGIC 0x48454150u
 #define HEAP_ALIGN 8u
-#define HEAP_INITIAL_PAGES 256u
+#define HEAP_INITIAL_PAGES 32u
+#define HEAP_GROW_PAGES    16u
 
 /*
  * Early heap strategy (x86_64):
@@ -33,11 +34,105 @@ volatile u32 heap_used_os = 0;
 volatile u32 heap_free_os = 0;
 
 static struct heap_block *heap_head;
+static u32 heap_pages_os;
 
 static size_t align_up(size_t value, size_t alignment)
 {
     return (value + alignment - 1u) & ~(alignment - 1u);
 }
+
+static void heap_coalesce(void)
+{
+    struct heap_block *current = heap_head;
+
+    while (current != NULL) {
+        struct heap_block *nxt = current->next;
+        u8 *end;
+
+        if (!current->free || nxt == NULL || !nxt->free) {
+            current = nxt;
+            continue;
+        }
+
+        end = (u8 *)current + sizeof(struct heap_block) + current->size;
+        if (end != (u8 *)nxt) {
+            current = nxt;
+            continue;
+        }
+
+        current->size += (u32)sizeof(struct heap_block) + nxt->size;
+        current->next = nxt->next;
+        heap_free_os += (u32)sizeof(struct heap_block);
+    }
+}
+
+#ifdef __x86_64__
+static int heap_append_region(u8 *base, size_t bytes)
+{
+    struct heap_block *block;
+    struct heap_block *tail;
+
+    if (base == NULL || bytes <= sizeof(struct heap_block) + HEAP_ALIGN) {
+        return -1;
+    }
+
+    block = (struct heap_block *)base;
+    block->magic = HEAP_MAGIC;
+    block->size = (u32)(bytes - sizeof(struct heap_block));
+    block->free = true;
+    block->next = NULL;
+
+    if (heap_head == NULL) {
+        heap_head = block;
+        heap_free_os = block->size;
+        return 0;
+    }
+
+    tail = heap_head;
+    while (tail->next != NULL) {
+        tail = tail->next;
+    }
+
+    /* Grow the last free block if the new pages sit right after it. */
+    if (tail->free) {
+        u8 *end = (u8 *)tail + sizeof(struct heap_block) + tail->size;
+
+        if (end == base) {
+            tail->size += (u32)bytes;
+            heap_free_os += (u32)bytes;
+            return 0;
+        }
+    }
+
+    tail->next = block;
+    heap_free_os += block->size;
+    return 0;
+}
+
+static int heap_expand(size_t need)
+{
+    u32 pages;
+    u64 phys;
+    size_t bytes;
+
+    pages = (u32)((need + sizeof(struct heap_block) + PAGE_SIZE - 1u) / PAGE_SIZE);
+    if (pages < HEAP_GROW_PAGES) {
+        pages = HEAP_GROW_PAGES;
+    }
+
+    phys = pmm_alloc_contiguous(pages);
+    if (phys == 0) {
+        return -1;
+    }
+
+    bytes = (size_t)pages * PAGE_SIZE;
+    if (heap_append_region((u8 *)phys, bytes) < 0) {
+        return -1;
+    }
+    heap_pages_os += pages;
+    return 0;
+}
+#endif
 
 static void heap_split(struct heap_block *block, size_t size)
 {
@@ -94,6 +189,7 @@ void heap_init(void)
     heap_head->size = (u32)(bytes - sizeof(struct heap_block));
     heap_head->free = true;
     heap_head->next = NULL;
+    heap_pages_os = HEAP_INITIAL_PAGES;
 
     heap_used_os = 0;
     heap_free_os = heap_head->size;
@@ -103,15 +199,9 @@ void heap_init(void)
     serial_write("\n");
 }
 
-void *kmalloc(size_t size)
+static void *heap_try_alloc(size_t size)
 {
     struct heap_block *block;
-
-    if (size == 0) {
-        return NULL;
-    }
-
-    size = align_up(size, HEAP_ALIGN);
 
     for (block = heap_head; block != NULL; block = block->next) {
         if (block->magic != HEAP_MAGIC) {
@@ -126,14 +216,30 @@ void *kmalloc(size_t size)
             return (void *)(block + 1);
         }
     }
-
     return NULL;
+}
+
+void *kmalloc(size_t size)
+{
+    void *p;
+
+    if (size == 0) {
+        return NULL;
+    }
+
+    size = align_up(size, HEAP_ALIGN);
+    p = heap_try_alloc(size);
+#ifdef __x86_64__
+    if (p == NULL && heap_expand(size) == 0) {
+        p = heap_try_alloc(size);
+    }
+#endif
+    return p;
 }
 
 void kfree(void *ptr)
 {
     struct heap_block *block;
-    struct heap_block *current;
 
     if (ptr == NULL) {
         return;
@@ -151,14 +257,7 @@ void kfree(void *ptr)
     block->free = true;
     heap_used_os -= block->size;
     heap_free_os += block->size;
-
-    /* Merge hacia adelante. */
-    for (current = heap_head; current != NULL; current = current->next) {
-        if (current->free && current->next != NULL && current->next->free) {
-            current->size += sizeof(struct heap_block) + current->next->size;
-            current->next = current->next->next;
-        }
-    }
+    heap_coalesce();
 }
 
 void heap_print_stats(void)

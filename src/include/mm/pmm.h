@@ -13,6 +13,8 @@ extern volatile u32 free_frames_os;
 void pmm_init(void *mb2_addr);
 /* Contiguous physical pages for early identity heap; 0 on failure. */
 u64 pmm_alloc_contiguous(u32 count);
+/* After the last Multiboot2 consumer (FB / cmdline). Safe no-op if unused. */
+void pmm_release_boot_info(void);
 #else
 #include "multiboot.h"
 void pmm_init(const struct multiboot_info *info);
