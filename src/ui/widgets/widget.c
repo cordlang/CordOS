@@ -438,3 +438,14 @@ bool ui_icon_btn(u32 id, u32 x, u32 y, u32 w, u32 h, enum ui_icon icon,
     }
     return widget_click(hot, true);
 }
+
+bool ui_clicked(u32 id, u32 x, u32 y, u32 w, u32 h)
+{
+    bool hot = widget_hot(x, y, w, h, true);
+
+    (void)id;
+    if (hot) {
+        s_pointer = true;
+    }
+    return widget_click(hot, true);
+}

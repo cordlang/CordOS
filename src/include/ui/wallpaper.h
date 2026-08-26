@@ -14,7 +14,7 @@
 #define DESK_WP_ABSTRACT 1u
 #define DESK_WP_COUNT    2u
 
-/* RGB888 packed, row-major. Desktop: default.png. Login: login.jpg / abstract. */
+/* RGB888 packed, row-major. Desktop and login share login.jpg / abstract. */
 extern const u8 wallpaper_rgb[];
 extern const u8 wallpaper_login_rgb[];
 extern const u8 wallpaper_login_alt_rgb[];

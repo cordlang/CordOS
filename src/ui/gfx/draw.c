@@ -441,8 +441,8 @@ void draw_bg_atmosphere(void)
         frost_use(s_frost_login_alt);
         fb_blit_rgb_cover(wallpaper_login_alt_rgb, WALLPAPER_W, WALLPAPER_H);
     } else {
-        frost_use(s_frost_desk);
-        fb_blit_rgb_cover(wallpaper_rgb, WALLPAPER_W, WALLPAPER_H);
+        frost_use(s_frost_login != NULL ? s_frost_login : s_frost_desk);
+        fb_blit_rgb_cover(wallpaper_login_rgb, WALLPAPER_W, WALLPAPER_H);
     }
 }
 
@@ -479,7 +479,7 @@ const u8 *wallpaper_desk_pixels_id(u32 id)
     if (id == DESK_WP_ABSTRACT) {
         return wallpaper_login_alt_rgb;
     }
-    return wallpaper_rgb;
+    return wallpaper_login_rgb;
 }
 
 const u8 *wallpaper_desk_pixels(void)
@@ -542,7 +542,7 @@ void draw_bg_login_frosted(void)
 
 void draw_wallpaper_thumb(u32 x, u32 y, u32 w, u32 h, u32 wp_id, bool selected)
 {
-    const u8 *rgb = wallpaper_login_pixels_id(wp_id);
+    const u8 *rgb = wallpaper_desk_pixels_id(wp_id);
     u32 row;
     u32 col;
     struct rgb ring = selected ? THEME_ACCENT : THEME_BORDER;

@@ -18,6 +18,7 @@ static const char *const strings_es[MSG_COUNT] = {
     [MSG_CAT_NOT_FOUND] = "cat: no encontrado",
     [MSG_LS_ERROR] = "ls: error",
     [MSG_UNKNOWN_CMD] = " — escribe help",
+    [MSG_PING_USAGE] = "uso: ping [ip]",
     [MSG_STATUS_SUFFIX] = "  |  exit=Home",
     [MSG_LOGIN_USER] = "Usuario",
     [MSG_LOGIN_PASSWORD] = "Contraseña",
@@ -36,12 +37,12 @@ static const char *const strings_es[MSG_COUNT] = {
     [MSG_HOME_ABOUT] = "Acerca de",
     [MSG_HOME_LOGOUT] = "Cerrar sesión",
     [MSG_HOME_POWER] = "Apagar",
-    [MSG_HOME_HINT] = "Clic iconos o Menu  arrastra ventanas  F1 shell",
+    [MSG_HOME_HINT] = "Doble clic en iconos o el Menu  arrastra ventanas  F1 shell",
     [MSG_FILES_TITLE] = "Archivos (/)",
     [MSG_FILES_HINT] = "Clic un archivo  Esc cierra",
-    [MSG_ABOUT_BODY] = "Kernel freestanding. Escritorio grafico con raton.",
-    [MSG_SETTINGS_BODY] = "Idioma, fondo de login y estilo de iconos.",
-    [MSG_SETTINGS_WP] = "Fondo de inicio de sesion",
+    [MSG_ABOUT_BODY] = "Kernel independiente. Escritorio grafico con raton.",
+    [MSG_SETTINGS_BODY] = "Idioma, fondo e iconos.",
+    [MSG_SETTINGS_WP] = "Fondo de pantalla",
     [MSG_WP_DEFAULT] = "Predeterminado",
     [MSG_WP_ABSTRACT] = "Abstracto",
     [MSG_SETTINGS_ICONS] = "Estilo de iconos",
@@ -54,7 +55,7 @@ static const char *const strings_es[MSG_COUNT] = {
     [MSG_LAUNCHER] = "Menú",
     [MSG_POWER_CONFIRM] = "Apagar el sistema ahora?",
     [MSG_POWER_CANCEL] = "Cancelar",
-    [MSG_LANG_CLICK] = "Clic para cambiar idioma",
+    [MSG_LANG_CLICK] = "Clic para cambiar el idioma",
     [MSG_TERM_BANNER] = "help  ping  net  ls  cat  clear  exit",
     [MSG_DESKTOP_HINT] = "Clic derecho en el fondo para personalizar",
     [MSG_CTX_TITLE] = "Escritorio",
@@ -110,6 +111,7 @@ static const char *const strings_en[MSG_COUNT] = {
     [MSG_CAT_NOT_FOUND] = "cat: not found",
     [MSG_LS_ERROR] = "ls: error",
     [MSG_UNKNOWN_CMD] = " — type help",
+    [MSG_PING_USAGE] = "usage: ping [ip]",
     [MSG_STATUS_SUFFIX] = "  |  exit=Home",
     [MSG_LOGIN_USER] = "Username",
     [MSG_LOGIN_PASSWORD] = "Enter Password",
@@ -128,12 +130,12 @@ static const char *const strings_en[MSG_COUNT] = {
     [MSG_HOME_ABOUT] = "About",
     [MSG_HOME_LOGOUT] = "Sign out",
     [MSG_HOME_POWER] = "Shut down",
-    [MSG_HOME_HINT] = "Click icons or Menu  drag windows  F1 shell",
+    [MSG_HOME_HINT] = "Double-click icons or Menu  drag windows  F1 shell",
     [MSG_FILES_TITLE] = "Files (/)",
     [MSG_FILES_HINT] = "Click a file  Esc closes",
     [MSG_ABOUT_BODY] = "Freestanding kernel. Graphical desktop with mouse.",
-    [MSG_SETTINGS_BODY] = "Language, sign-in background and icon style.",
-    [MSG_SETTINGS_WP] = "Sign-in background",
+    [MSG_SETTINGS_BODY] = "Language, wallpaper and icon style.",
+    [MSG_SETTINGS_WP] = "Wallpaper",
     [MSG_WP_DEFAULT] = "Default",
     [MSG_WP_ABSTRACT] = "Abstract",
     [MSG_SETTINGS_ICONS] = "Icon style",
@@ -209,7 +211,7 @@ const char *i18n_lang_name(enum lang_id lang)
     if (lang == LANG_EN) {
         return "English";
     }
-    return "Espanol";
+    return "Español";
 }
 
 const char *i18n(enum msg_id id)

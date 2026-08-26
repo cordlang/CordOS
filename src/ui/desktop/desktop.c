@@ -286,6 +286,12 @@ static bool s_cursor_valid;
 static i32 s_cursor_x;
 static i32 s_cursor_y;
 
+static void wallpaper_apply(u32 id)
+{
+    wallpaper_set_login(id);
+    wallpaper_set_desk(id);
+}
+
 static void desktop_cursor_update(bool scene_is_back)
 {
     i32 mx = mouse_x();
@@ -293,6 +299,8 @@ static void desktop_cursor_update(bool scene_is_back)
     bool moved = !s_cursor_valid || mx != s_cursor_x || my != s_cursor_y;
     u32 hit;
     enum cursor_kind kind;
+    u32 sx;
+    u32 sy;
 
     if (!scene_is_back && !moved) {
         return;
@@ -301,6 +309,21 @@ static void desktop_cursor_update(bool scene_is_back)
         cursor_invalidate();
     } else {
         cursor_hide();
+    }
+    if (mx < 0) {
+        mx = 0;
+    }
+    if (my < 0) {
+        my = 0;
+    }
+    sx = (u32)mx;
+    sy = (u32)my;
+    if (fb_compose_ready()) {
+        fb_compose_begin();
+        cursor_set_on_light(draw_region_is_light(sx, sy, 12u, 12u));
+        if (!scene_is_back) {
+            fb_compose_end();
+        }
     }
     hit = hit_test(mx, my);
     kind = desktop_cursor_kind(hit);
@@ -553,7 +576,7 @@ static void term_exec(struct window *w)
         }
         if (*arg != '\0') {
             if (!net_parse_ip(arg, &ip)) {
-                term_push(w, "uso: ping [ip]");
+                term_push(w, i18n(MSG_PING_USAGE));
                 w->term_len = 0;
                 w->term_input[0] = '\0';
                 return;
@@ -966,7 +989,7 @@ static void draw_desktop_icons(void)
         bool light;
         struct rgb label;
         icon_geom(i, &x, &y, &w, &h);
-        light = draw_ui_is_light();
+        light = draw_region_is_light(x, y, w, h > 24u ? h - 24u : h);
         label = hot ? THEME_ACCENT : (light ? DESK_INK : DESK_WHITE);
         if (hot) {
             draw_glass(x, y, w, h > 24u ? h - 24u : h, 18, THEME_GLASS, 64u);
@@ -1044,7 +1067,7 @@ static void draw_win_body(struct window *w, u32 id)
         u32 ic_y;
         u32 t1x;
         u32 s;
-        u32 sel = wallpaper_login_id();
+        u32 sel = wallpaper_desk_id();
         u32 ic_sel = icon_style();
         const enum msg_id ic_names[ICON_STYLE_COUNT] = {
             MSG_IC_LINEAR, MSG_IC_BOLD, MSG_IC_BROKEN, MSG_IC_BULK
@@ -1062,11 +1085,11 @@ static void draw_win_body(struct window *w, u32 id)
         draw_text(bx + 24, wp_y - FONT_LINE, i18n(MSG_SETTINGS_WP), THEME_FG, 1);
         t1x = bx + 24u + WP_THUMB_W + WP_THUMB_GAP;
         draw_wallpaper_thumb(bx + 24u, wp_y, WP_THUMB_W, WP_THUMB_H,
-                             LOGIN_WP_DEFAULT,
-                             sel == LOGIN_WP_DEFAULT || s_hover == HIT_WP_0);
+                             DESK_WP_DEFAULT,
+                             sel == DESK_WP_DEFAULT || s_hover == HIT_WP_0);
         draw_wallpaper_thumb(t1x, wp_y, WP_THUMB_W, WP_THUMB_H,
-                             LOGIN_WP_ABSTRACT,
-                             sel == LOGIN_WP_ABSTRACT || s_hover == HIT_WP_1);
+                             DESK_WP_ABSTRACT,
+                             sel == DESK_WP_ABSTRACT || s_hover == HIT_WP_1);
         draw_text(bx + 24u, wp_y + WP_THUMB_H + 8u, i18n(MSG_WP_DEFAULT),
                   sel == LOGIN_WP_DEFAULT ? THEME_ACCENT : THEME_FG_DIM, 1);
         draw_text(t1x, wp_y + WP_THUMB_H + 8u, i18n(MSG_WP_ABSTRACT),
@@ -1126,7 +1149,7 @@ static void draw_status(void)
     struct rgb icon_col;
 
     status_geom(&sx, &sy, &sw, &sh);
-    light = draw_ui_is_light();
+    light = draw_region_is_light(sx, sy, sw, sh);
     icon_col = light ? DESK_INK : DESK_WHITE;
     draw_glass(sx, sy, sw, sh, sh / 2u, THEME_GLASS, hot ? 90u : 70u);
     draw_round_fill(sx + 2u, sy + 2u, sw - 4u, sh / 3u, sh / 2u, sheen, 22u);
@@ -1151,8 +1174,12 @@ static void draw_dock(void)
     u32 i;
     struct rgb sheen = { 0xFF, 0xFF, 0xFF };
     bool launcher_hot = (s_hover == HIT_LAUNCHER) || s_menu;
+    bool dock_light;
+    struct rgb idle;
 
     dock_geom(&dx, &dy, &dw, &dh);
+    dock_light = draw_region_is_light(dx, dy, dw, dh);
+    idle = dock_light ? DESK_INK : THEME_FG;
     draw_glass(dx, dy, dw, dh, dh / 2u, THEME_GLASS, 72u);
     draw_round_fill(dx + 3u, dy + 3u, dw - 6u, dh / 3u, dh / 2u, sheen, 24u);
 
@@ -1175,7 +1202,7 @@ static void draw_dock(void)
             draw_round_fill(sx + 6u, dy + 8u, DOCK_SLOT - 12u, dh - 16u, 14u,
                             THEME_HOVER, 170u);
         }
-        col = (i == 0u) ? THEME_ACCENT : (hot ? THEME_ACCENT : THEME_FG);
+        col = (i == 0u) ? THEME_ACCENT : (hot ? THEME_ACCENT : idle);
         draw_icon(ix, iy, DOCK_ICON, apps[i], col);
         if (run) {
             u32 dot = sx + (DOCK_SLOT > 6u ? (DOCK_SLOT - 6u) / 2u : 0);
@@ -1391,9 +1418,9 @@ static void handle_click(u32 hit, bool dbl)
         u32 item = hit - HIT_CTX;
         s_ctx = false;
         if (item == 0u) {
-            wallpaper_set_desk(DESK_WP_DEFAULT);
+            wallpaper_apply(DESK_WP_DEFAULT);
         } else if (item == 1u) {
-            wallpaper_set_desk(DESK_WP_ABSTRACT);
+            wallpaper_apply(DESK_WP_ABSTRACT);
         } else if (item == 2u) {
             (void)win_open(WIN_SETTINGS);
         } else if (item == 3u) {
@@ -1461,11 +1488,11 @@ static void handle_click(u32 hit, bool dbl)
         return;
     }
     if (hit == HIT_WP_0) {
-        wallpaper_set_login(LOGIN_WP_DEFAULT);
+        wallpaper_apply(DESK_WP_DEFAULT);
         return;
     }
     if (hit == HIT_WP_1) {
-        wallpaper_set_login(LOGIN_WP_ABSTRACT);
+        wallpaper_apply(DESK_WP_ABSTRACT);
         return;
     }
     if (hit >= HIT_IC_0 && hit < HIT_IC_0 + ICON_STYLE_COUNT) {
@@ -1577,17 +1604,6 @@ static bool desk_chrome_hit(u32 hit)
 
 static bool desktop_widgets(void)
 {
-    const enum ui_icon apps[DOCK_APPS] = {
-        UI_ICON_LAUNCHER, UI_ICON_FILES, UI_ICON_TERM, UI_ICON_SETTINGS,
-        UI_ICON_ABOUT
-    };
-    const enum win_kind kinds[DOCK_APPS] = {
-        WIN_FILES, WIN_FILES, WIN_TERM, WIN_SETTINGS, WIN_ABOUT
-    };
-    const enum msg_id labels[MENU_COUNT] = {
-        MSG_HOME_FILES, MSG_HOME_TERMINAL, MSG_HOME_SETTINGS,
-        MSG_HOME_ABOUT, MSG_HOME_LOGOUT, MSG_HOME_POWER
-    };
     u32 dx;
     u32 dy;
     u32 dw;
@@ -1622,21 +1638,17 @@ static bool desktop_widgets(void)
     ui_set_cursor_kind(desktop_cursor_kind(hit_test(mouse_x(), mouse_y())));
     for (i = 0; i < DOCK_APPS; ++i) {
         u32 sx = dock_slot_x(dx, i);
-        bool acc = (i == 0u && s_menu);
-        bool run = (i > 0u) && dock_app_running(kinds[i]);
 
-        if (ui_icon_btn(0xD00u + i, sx, dy, DOCK_SLOT, dh, apps[i], acc, run)) {
+        if (ui_clicked(0xD00u + i, sx, dy, DOCK_SLOT, dh)) {
             if (i == 0u) {
                 s_menu = !s_menu;
                 s_ctx = false;
                 need_full = true;
             } else {
                 s_menu = false;
+                s_ctx = false;
                 if (is_double_click(HIT_DOCK + (i - 1u))) {
                     action_open(i - 1u);
-                    need_full = true;
-                } else {
-                    s_hover = HIT_DOCK + (i - 1u);
                     need_full = true;
                 }
             }
@@ -1652,10 +1664,9 @@ static bool desktop_widgets(void)
         for (i = 0; i < MENU_COUNT; ++i) {
             u32 ry = my + MENU_INSET + i * MENU_ROW;
 
-            if (ui_button(0xE00u + i, mx + MENU_INSET, ry + 2u,
-                          mw > MENU_INSET * 2u ? mw - MENU_INSET * 2u : mw,
-                          MENU_ROW > 4u ? MENU_ROW - 4u : MENU_ROW,
-                          i18n(labels[i]), false, true)) {
+            if (ui_clicked(0xE00u + i, mx + MENU_INSET, ry + 2u,
+                           mw > MENU_INSET * 2u ? mw - MENU_INSET * 2u : mw,
+                           MENU_ROW > 4u ? MENU_ROW - 4u : MENU_ROW)) {
                 action_open(i);
                 need_full = true;
             }
@@ -1763,10 +1774,9 @@ void desktop_run(void)
                     }
                 }
             } else if (ev.kind == MOUSE_EV_DOWN && ev.button == MOUSE_LEFT) {
-                bool dbl = is_double_click(hit);
                 s_hover = hit;
                 if (!desk_chrome_hit(hit)) {
-                    handle_click(hit, dbl);
+                    handle_click(hit, is_double_click(hit));
                     dirty = true;
                 }
             } else if (ev.kind == MOUSE_EV_DOWN && ev.button == MOUSE_RIGHT) {

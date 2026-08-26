@@ -22,5 +22,7 @@ bool ui_field(u32 id, u32 x, u32 y, u32 w, u32 h, const char *text,
               bool password, bool focused, const char *placeholder);
 bool ui_icon_btn(u32 id, u32 x, u32 y, u32 w, u32 h, enum ui_icon icon,
                  bool accent, bool running);
+/* Hit-test + click only. Use when the caller already painted the control. */
+bool ui_clicked(u32 id, u32 x, u32 y, u32 w, u32 h);
 
 #endif
