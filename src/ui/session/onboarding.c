@@ -121,83 +121,6 @@ static u8 ease_out(u8 t)
     return (u8)(255u - (u * u) / 255u);
 }
 
-static u8 rec601_luma(u8 r, u8 g, u8 b)
-{
-    return (u8)(((u32)r * 77u + (u32)g * 150u + (u32)b * 29u) >> 8);
-}
-
-static bool wp_at(u32 x, u32 y, u8 *r, u8 *g, u8 *b)
-{
-    const u8 *rgb = wallpaper_login_pixels();
-    u32 fb_w = fb_width();
-    u32 fb_h = fb_height();
-    u32 copy_w;
-    u32 copy_h;
-    u32 src_x0;
-    u32 src_y0;
-    u32 dst_x0;
-    u32 dst_y0;
-    u32 sx;
-    u32 sy;
-    const u8 *p;
-
-    *r = 0x12;
-    *g = 0x16;
-    *b = 0x1C;
-    if (rgb == NULL || fb_w == 0 || fb_h == 0) {
-        return false;
-    }
-    copy_w = (WALLPAPER_W < fb_w) ? WALLPAPER_W : fb_w;
-    copy_h = (WALLPAPER_H < fb_h) ? WALLPAPER_H : fb_h;
-    src_x0 = (WALLPAPER_W > fb_w) ? (WALLPAPER_W - fb_w) / 2u : 0;
-    src_y0 = (WALLPAPER_H > fb_h) ? (WALLPAPER_H - fb_h) / 2u : 0;
-    dst_x0 = (fb_w > WALLPAPER_W) ? (fb_w - WALLPAPER_W) / 2u : 0;
-    dst_y0 = (fb_h > WALLPAPER_H) ? (fb_h - WALLPAPER_H) / 2u : 0;
-    if (x < dst_x0 || y < dst_y0) {
-        return false;
-    }
-    sx = src_x0 + (x - dst_x0);
-    sy = src_y0 + (y - dst_y0);
-    if (sx >= src_x0 + copy_w || sy >= src_y0 + copy_h ||
-        sx >= WALLPAPER_W || sy >= WALLPAPER_H) {
-        return false;
-    }
-    p = rgb + (sy * WALLPAPER_W + sx) * 3u;
-    *r = p[0];
-    *g = p[1];
-    *b = p[2];
-    return true;
-}
-
-static bool region_is_light(u32 x, u32 y, u32 w, u32 h)
-{
-    u32 gx;
-    u32 gy;
-    u32 sum = 0;
-    u32 n = 0;
-
-    if (w == 0 || h == 0) {
-        return false;
-    }
-    for (gy = 0; gy < 3u; ++gy) {
-        u32 py = y + (h * (2u * gy + 1u)) / 6u;
-        for (gx = 0; gx < 6u; ++gx) {
-            u32 px = x + (w * (2u * gx + 1u)) / 12u;
-            u8 r;
-            u8 g;
-            u8 b;
-            u8 luma;
-
-            wp_at(px, py, &r, &g, &b);
-            luma = rec601_luma(r, g, b);
-            luma = (u8)(((u32)luma * 233u + 9u * 22u) / 255u);
-            sum += luma;
-            ++n;
-        }
-    }
-    return n != 0u && (sum / n) >= 128u;
-}
-
 struct ob_geom {
     u32 cx;
     u32 x0;
@@ -540,9 +463,10 @@ static void ob_draw_glass_pill(u32 x, u32 y, u32 w, u32 h, u8 focus)
 {
     u8 glass_a = mix_u8(38u, 86u, focus);
     u8 rim_a = mix_u8(16u, 64u, focus);
+    struct rgb rim = draw_region_is_light(x, y, w, h) ? OB_INK : OB_WHITE;
 
     draw_round_fill(x > 0 ? x - 1u : 0, y > 0 ? y - 1u : 0, w + 2u, h + 2u,
-                    (h + 2u) / 2u, OB_WHITE, rim_a);
+                    (h + 2u) / 2u, rim, rim_a);
     draw_glass(x, y, w, h, h / 2u, OB_GLASS, glass_a);
     if (w > 24u) {
         draw_round_fill(x + 12u, y + 1u, w - 24u, 1u, 0, OB_WHITE,
@@ -616,7 +540,7 @@ static void draw_step(enum ob_step step, u32 hit, u32 lang_focus, bool field_on,
     draw_bg_login();
     fb_overlay(4, 10, 22, 22u);
 
-    s_light = region_is_light(g.x0, g.logo_y, g.cw, 180u);
+    s_light = draw_region_is_light(g.x0, g.logo_y, g.cw, 180u);
     cursor_set_on_light(s_light);
 
     ob_draw_logo(g.logo_x, g.logo_y);
@@ -940,7 +864,7 @@ static void commit_user(void)
     fb_compose_begin();
     draw_bg_login();
     fb_overlay(4, 10, 22, 22u);
-    s_light = region_is_light(g.x0, g.logo_y, g.cw, 180u);
+    s_light = draw_region_is_light(g.x0, g.logo_y, g.cw, 180u);
     ob_draw_logo(g.logo_x, g.logo_y);
     tw = draw_text_width(i18n(MSG_OB_CREATING), 1);
     tx = (fb_width() > tw) ? (fb_width() - tw) / 2u : g.x0;

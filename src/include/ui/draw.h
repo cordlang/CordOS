@@ -36,6 +36,8 @@ u32 draw_text_width(const char *text, u32 scale);
 u32 draw_text_width_h(const char *text, u32 height);
 void draw_text_centered(u32 cx, u32 y, const char *text, struct rgb color,
                         u32 scale);
+/* Rec. 601 luma of the current composed framebuffer region. */
+bool draw_region_is_light(u32 x, u32 y, u32 w, u32 h);
 void draw_panel(u32 x, u32 y, u32 w, u32 h, bool focused);
 void draw_field(u32 x, u32 y, u32 w, u32 h, const char *text, bool password,
                 bool focused);

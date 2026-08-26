@@ -15,6 +15,7 @@
 #include "persist.h"
 #include "pmm.h"
 #include "power.h"
+#include "rtc.h"
 #include "shell.h"
 #include "theme.h"
 #include "time.h"
@@ -115,9 +116,15 @@ static bool s_logout;
 static char s_clock[8];
 static char s_date[12];
 static u32 s_last_min = 0xFFFFFFFFu;
+static u8 s_last_day = 0xFFu;
+static u8 s_last_month = 0xFFu;
+static u16 s_last_year = 0xFFFFu;
+static u32 s_widget_last_hover = HIT_NONE;
+static bool s_widget_repaint_base;
 
 static void settings_layout(const struct window *w, u32 *lang_y, u32 *wp_y,
                             u32 *ic_y);
+static u32 hit_test(i32 px, i32 py);
 static enum cursor_kind desktop_cursor_kind(u32 hit);
 static void desktop_redraw(void);
 
@@ -168,20 +175,6 @@ static bool in_rect(i32 px, i32 py, i32 x, i32 y, i32 w, i32 h)
     return px >= x && py >= y && px < (x + w) && py < (y + h);
 }
 
-static u8 cmos_read(u8 reg)
-{
-    outb(0x70, (u8)(reg | 0x80u));
-    return inb(0x71);
-}
-
-static u8 cmos_bcd(u8 v, bool binary)
-{
-    if (binary) {
-        return v;
-    }
-    return (u8)(((v >> 4) * 10u) + (v & 0x0Fu));
-}
-
 static void date_refresh(u8 day, u8 mon)
 {
     static const char es_m[12][4] = {
@@ -222,110 +215,25 @@ static void date_refresh(u8 day, u8 mon)
 
 static void clock_refresh(void)
 {
-    u8 b = cmos_read(0x0B);
-    bool binary = (b & 0x04u) != 0;
-    u8 hour = cmos_bcd(cmos_read(0x04), binary);
-    u8 min = cmos_bcd(cmos_read(0x02), binary);
-    u8 day = cmos_bcd(cmos_read(0x07), binary);
-    u8 mon = cmos_bcd(cmos_read(0x08), binary);
+    struct rtc_time now;
 
-    if ((b & 0x02u) == 0) {
-        hour &= 0x7Fu;
+    if (!rtc_read(&now)) {
+        s_clock[0] = '0';
+        s_clock[1] = '0';
+        s_clock[2] = ':';
+        s_clock[3] = '0';
+        s_clock[4] = '0';
+        s_clock[5] = '\0';
+        date_refresh(1u, 1u);
+        return;
     }
-    if (hour > 23u) {
-        hour = 0;
-    }
-    if (min > 59u) {
-        min = 0;
-    }
-    s_clock[0] = (char)('0' + (hour / 10u));
-    s_clock[1] = (char)('0' + (hour % 10u));
+    s_clock[0] = (char)('0' + (now.hour / 10u));
+    s_clock[1] = (char)('0' + (now.hour % 10u));
     s_clock[2] = ':';
-    s_clock[3] = (char)('0' + (min / 10u));
-    s_clock[4] = (char)('0' + (min % 10u));
+    s_clock[3] = (char)('0' + (now.minute / 10u));
+    s_clock[4] = (char)('0' + (now.minute % 10u));
     s_clock[5] = '\0';
-    date_refresh(day, mon);
-}
-
-static u8 rec601_luma(u8 r, u8 g, u8 b)
-{
-    return (u8)(((u32)r * 77u + (u32)g * 150u + (u32)b * 29u) >> 8);
-}
-
-static bool desk_wp_at(u32 x, u32 y, u8 *r, u8 *g, u8 *b)
-{
-    const u8 *rgb = wallpaper_desk_pixels();
-    u32 fb_w = fb_width();
-    u32 fb_h = fb_height();
-    u32 copy_w;
-    u32 copy_h;
-    u32 src_x0;
-    u32 src_y0;
-    u32 dst_x0;
-    u32 dst_y0;
-    u32 sx;
-    u32 sy;
-    const u8 *p;
-
-    *r = 0x12;
-    *g = 0x16;
-    *b = 0x1C;
-    if (rgb == NULL || fb_w == 0 || fb_h == 0) {
-        return false;
-    }
-    copy_w = (WALLPAPER_W < fb_w) ? WALLPAPER_W : fb_w;
-    copy_h = (WALLPAPER_H < fb_h) ? WALLPAPER_H : fb_h;
-    src_x0 = (WALLPAPER_W > fb_w) ? (WALLPAPER_W - fb_w) / 2u : 0;
-    src_y0 = (WALLPAPER_H > fb_h) ? (WALLPAPER_H - fb_h) / 2u : 0;
-    dst_x0 = (fb_w > WALLPAPER_W) ? (fb_w - WALLPAPER_W) / 2u : 0;
-    dst_y0 = (fb_h > WALLPAPER_H) ? (fb_h - WALLPAPER_H) / 2u : 0;
-    if (x < dst_x0 || y < dst_y0) {
-        return false;
-    }
-    sx = src_x0 + (x - dst_x0);
-    sy = src_y0 + (y - dst_y0);
-    if (sx >= src_x0 + copy_w || sy >= src_y0 + copy_h ||
-        sx >= WALLPAPER_W || sy >= WALLPAPER_H) {
-        return false;
-    }
-    p = rgb + (sy * WALLPAPER_W + sx) * 3u;
-    *r = p[0];
-    *g = p[1];
-    *b = p[2];
-    return true;
-}
-
-static bool desk_region_is_light(u32 x, u32 y, u32 w, u32 h)
-{
-    u32 gx;
-    u32 gy;
-    u32 sum = 0;
-    u32 n = 0;
-    const u32 nx = 6u;
-    const u32 ny = 3u;
-
-    if (w == 0 || h == 0) {
-        return false;
-    }
-    for (gy = 0; gy < ny; ++gy) {
-        u32 py = y + (h * (2u * gy + 1u)) / (2u * ny);
-        for (gx = 0; gx < nx; ++gx) {
-            u32 px = x + (w * (2u * gx + 1u)) / (2u * nx);
-            u8 r;
-            u8 g;
-            u8 b;
-            u8 luma;
-            desk_wp_at(px, py, &r, &g, &b);
-            luma = rec601_luma(r, g, b);
-            luma = (u8)(((u32)luma * 237u + 19u * 18u) / 255u);
-            sum += luma;
-            ++n;
-        }
-    }
-    if (n == 0) {
-        return false;
-    }
-    return (sum / n) >= 128u;
+    date_refresh(now.day, now.month);
 }
 
 static enum ui_icon battery_icon(void)
@@ -346,14 +254,71 @@ static enum ui_icon battery_icon(void)
 
 static bool clock_changed(void)
 {
-    u8 min = cmos_bcd(cmos_read(0x02), (cmos_read(0x0B) & 0x04u) != 0);
+    struct rtc_time now;
 
-    if (min == (u8)s_last_min) {
+    if (!rtc_read(&now)) {
         return false;
     }
-    s_last_min = min;
-    clock_refresh();
+    if (now.minute == (u8)s_last_min && now.day == s_last_day &&
+        now.month == s_last_month && now.year == s_last_year) {
+        return false;
+    }
+    s_last_min = now.minute;
+    s_last_day = now.day;
+    s_last_month = now.month;
+    s_last_year = now.year;
+    s_clock[0] = (char)('0' + (now.hour / 10u));
+    s_clock[1] = (char)('0' + (now.hour % 10u));
+    s_clock[2] = ':';
+    s_clock[3] = (char)('0' + (now.minute / 10u));
+    s_clock[4] = (char)('0' + (now.minute % 10u));
+    s_clock[5] = '\0';
+    date_refresh(now.day, now.month);
     return true;
+}
+
+static i32 desktop_cursor_x(void)
+{
+    i32 x = mouse_x() - 4;
+
+    return x < 0 ? 0 : x;
+}
+
+static i32 desktop_cursor_y(void)
+{
+    i32 y = mouse_y() - 4;
+
+    return y < 0 ? 0 : y;
+}
+
+static bool s_cursor_valid;
+static i32 s_cursor_x;
+static i32 s_cursor_y;
+
+static void desktop_cursor_update(bool scene_is_back)
+{
+    i32 mx = mouse_x();
+    i32 my = mouse_y();
+    bool moved = !s_cursor_valid || mx != s_cursor_x || my != s_cursor_y;
+    u32 hit;
+    enum cursor_kind kind;
+
+    if (!scene_is_back && !moved) {
+        return;
+    }
+    if (scene_is_back) {
+        cursor_invalidate();
+    } else {
+        cursor_hide();
+    }
+    hit = hit_test(mx, my);
+    kind = desktop_cursor_kind(hit);
+    cursor_set_kind(kind);
+    cursor_set_on_light(draw_region_is_light((u32)desktop_cursor_x(),
+                                             (u32)desktop_cursor_y(), 8u, 8u));
+    s_cursor_x = mx;
+    s_cursor_y = my;
+    s_cursor_valid = true;
 }
 
 static const char *win_title(enum win_kind kind)
@@ -1012,7 +977,7 @@ static void draw_desktop_icons(void)
         bool light;
         struct rgb label;
         icon_geom(i, &x, &y, &w, &h);
-        light = desk_region_is_light(x, y + h - 28u, w, 24u);
+        light = draw_region_is_light(x, y + h - 28u, w, 24u);
         label = hot ? THEME_ACCENT : (light ? DESK_INK : DESK_WHITE);
         if (hot) {
             draw_glass(x, y, w, h > 24u ? h - 24u : h, 18, THEME_GLASS, 64u);
@@ -1168,16 +1133,20 @@ static void draw_status(void)
     u32 bat = 22u;
     struct rgb sheen = { 0xFF, 0xFF, 0xFF };
     bool hot = (s_hover == HIT_STATUS);
+    bool light;
+    struct rgb icon_col;
 
     status_geom(&sx, &sy, &sw, &sh);
+    light = draw_region_is_light(sx, sy, sw, sh);
+    icon_col = light ? DESK_INK : DESK_WHITE;
     draw_glass(sx, sy, sw, sh, sh / 2u, THEME_GLASS, hot ? 90u : 70u);
     draw_round_fill(sx + 2u, sy + 2u, sw - 4u, sh / 3u, sh / 2u, sheen, 22u);
     draw_icon(sx + (sw > bat ? (sw - bat) / 2u : 0),
               sy + (sh > bat ? (sh - bat) / 2u : 0),
-              bat, battery_icon(), THEME_FG);
+              bat, battery_icon(), icon_col);
 }
 
-static void draw_taskbar(void)
+static void draw_dock(void)
 {
     const enum ui_icon apps[DOCK_APPS] = {
         UI_ICON_LAUNCHER, UI_ICON_FILES, UI_ICON_TERM,
@@ -1224,6 +1193,11 @@ static void draw_taskbar(void)
             draw_round_fill(dot, dy + dh - 11u, 6u, 6u, 3u, THEME_ACCENT, 255u);
         }
     }
+}
+
+static void draw_taskbar(void)
+{
+    draw_dock();
     draw_status();
 }
 
@@ -1363,14 +1337,17 @@ static void paint_desktop_base(void)
     u32 date_w = draw_text_width(s_date, 1);
     u32 band_w = clock_w > date_w ? clock_w : date_w;
     u32 band_x = (w > band_w) ? (w - band_w) / 2u : 0;
-    bool light = desk_region_is_light(band_x, 16u, band_w + 8u, 88u);
-    struct rgb ink = light ? DESK_INK : DESK_WHITE;
-    struct rgb muted = light ? THEME_TITLE : DESK_MUTED;
+    bool light;
+    struct rgb ink;
+    struct rgb muted;
 
     draw_bg_atmosphere();
     fb_overlay(THEME_BG0.r, THEME_BG0.g, THEME_BG0.b, 18u);
+    light = draw_region_is_light(band_x, 16u, band_w + 8u, 88u);
+    ink = light ? DESK_INK : DESK_WHITE;
+    muted = light ? THEME_TITLE : DESK_MUTED;
     if (w > 720u) {
-        bool mark_light = desk_region_is_light(16u, 16u, 120u, 36u);
+        bool mark_light = draw_region_is_light(16u, 16u, 120u, 36u);
         draw_text(24u, 22u, name_os, mark_light ? DESK_INK : DESK_MUTED, 1);
     }
     draw_text_centered(w / 2u, 18u, s_clock, ink, 2);
@@ -1623,9 +1600,32 @@ static bool desktop_widgets(void)
     u32 dh;
     u32 i;
     bool need_full = false;
+    bool full = ui_comp_is_full();
+    bool chrome_changed = s_widget_last_hover != s_hover &&
+                          (desk_chrome_hit(s_widget_last_hover) ||
+                           desk_chrome_hit(s_hover));
+    bool repaint_base = full || s_widget_repaint_base || chrome_changed;
 
     dock_geom(&dx, &dy, &dw, &dh);
+    if (repaint_base) {
+        fb_compose_begin();
+        draw_dock();
+        ui_comp_damage(dx, dy, dw, dh);
+        if (s_menu) {
+            u32 mx;
+            u32 my;
+            u32 mw;
+            u32 mh;
+
+            menu_geom(&mx, &my, &mw, &mh);
+            draw_menu();
+            ui_comp_damage(mx, my, mw, mh);
+        }
+    } else {
+        desktop_cursor_update(false);
+    }
     ui_begin(mouse_x(), mouse_y(), mouse_buttons(), time_uptime_ms());
+    ui_set_cursor_kind(desktop_cursor_kind(hit_test(mouse_x(), mouse_y())));
     for (i = 0; i < DOCK_APPS; ++i) {
         u32 sx = dock_slot_x(dx, i);
         bool acc = (i == 0u && s_menu);
@@ -1662,7 +1662,12 @@ static bool desktop_widgets(void)
             }
         }
     }
+    if (repaint_base) {
+        desktop_cursor_update(true);
+    }
     ui_end();
+    s_widget_last_hover = s_hover;
+    s_widget_repaint_base = ui_busy();
     return need_full;
 }
 
@@ -1687,6 +1692,12 @@ void desktop_run(void)
     s_hover = HIT_NONE;
     s_logout = false;
     s_last_min = 0xFFFFFFFFu;
+    s_last_day = 0xFFu;
+    s_last_month = 0xFFu;
+    s_last_year = 0xFFFFu;
+    s_widget_last_hover = HIT_NONE;
+    s_widget_repaint_base = false;
+    s_cursor_valid = false;
     cursor_hide();
     if (fb_compose_ready()) {
         from = fb_layer_alloc();
@@ -1712,7 +1723,7 @@ void desktop_run(void)
     if (from != NULL) {
         ui_crossfade_from(from);
     }
-    cursor_set_kind(desktop_cursor_kind(hit_test(mouse_x(), mouse_y())));
+    desktop_cursor_update(true);
     ui_comp_mark_full();
     ui_comp_present();
     dirty = false;

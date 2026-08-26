@@ -7,7 +7,16 @@
 #include "string.h"
 #include "vmm.h"
 
-/* High canonical window for MMIO framebuffer (outside identity RAM). */
+/*
+ * High canonical window for MMIO framebuffer (outside identity RAM).
+ *
+ * This window is not a single page: it spans the whole visible surface plus
+ * slack, so it reaches FB_VIRT_BASE + ~10 MiB at 1920x1080x32 and up to
+ * ~128 MiB at 8K. Any other driver that maps MMIO must stay clear of it —
+ * see the window map in src/drivers/usb/ehci.c. A driver mapping inside this
+ * range replaces a framebuffer page-table entry, and the affected pixels then
+ * never reach VRAM at all.
+ */
 #define FB_VIRT_BASE 0xFFFF800000100000ull
 
 /* Bochs/QEMU/VirtualBox VBE DISPI — bump past Multiboot 640x480. */
@@ -113,82 +122,6 @@ static void fb_halo_all(u8 *base)
 
 static void fb_seal_edges(void);
 
-static u32 fb_avg32(u32 a, u32 b)
-{
-    u8 r = (u8)((((a >> 16) & 0xFFu) + ((b >> 16) & 0xFFu)) / 2u);
-    u8 g = (u8)((((a >> 8) & 0xFFu) + ((b >> 8) & 0xFFu)) / 2u);
-    u8 bl = (u8)(((a & 0xFFu) + (b & 0xFFu)) / 2u);
-    return fb_pack32(r, g, bl);
-}
-
-/*
- * Replace a scanline that is a leftover frosted/torn frame. Detect by the
- * left 256px row-mean: busy art makes per-pixel neighbor-agree tests miss,
- * but a full frost row shifts the mean ~15+ per channel while its two
- * sharp neighbors still match each other.
- */
-static void fb_repair_spike_rows(u8 *base)
-{
-    u32 y;
-    u32 probe;
-
-    if (fb_bits != 32 || base == NULL || fb_w < 32u || fb_h < 3u) {
-        return;
-    }
-    probe = fb_w < 256u ? fb_w : 256u;
-    for (y = 1; y + 1u < fb_h; ++y) {
-        u32 *p = fb_vis32(base, y - 1u);
-        u32 *c = fb_vis32(base, y);
-        u32 *n = fb_vis32(base, y + 1u);
-        u32 pr = 0;
-        u32 pg = 0;
-        u32 pb = 0;
-        u32 cr = 0;
-        u32 cg = 0;
-        u32 cb = 0;
-        u32 nr = 0;
-        u32 ng = 0;
-        u32 nb = 0;
-        u32 x;
-        u32 dp;
-        u32 dn;
-        u32 pn;
-
-        for (x = 0; x < probe; ++x) {
-            pr += (p[x] >> 16) & 0xFFu;
-            pg += (p[x] >> 8) & 0xFFu;
-            pb += p[x] & 0xFFu;
-            cr += (c[x] >> 16) & 0xFFu;
-            cg += (c[x] >> 8) & 0xFFu;
-            cb += c[x] & 0xFFu;
-            nr += (n[x] >> 16) & 0xFFu;
-            ng += (n[x] >> 8) & 0xFFu;
-            nb += n[x] & 0xFFu;
-        }
-        pr /= probe;
-        pg /= probe;
-        pb /= probe;
-        cr /= probe;
-        cg /= probe;
-        cb /= probe;
-        nr /= probe;
-        ng /= probe;
-        nb /= probe;
-        dp = (pr > cr ? pr - cr : cr - pr) + (pg > cg ? pg - cg : cg - pg) +
-             (pb > cb ? pb - cb : cb - pb);
-        dn = (nr > cr ? nr - cr : cr - nr) + (ng > cg ? ng - cg : cg - ng) +
-             (nb > cb ? nb - cb : cb - nb);
-        pn = (pr > nr ? pr - nr : nr - pr) + (pg > ng ? pg - ng : ng - pg) +
-             (pb > nb ? pb - nb : nb - pb);
-        if (dp < 24u || dn < 24u || pn > 18u) {
-            continue;
-        }
-        for (x = 0; x < fb_w; ++x) {
-            c[x] = fb_avg32(p[x], n[x]);
-        }
-    }
-}
-
 static void fb_put_pixel_raw(u32 x, u32 y, u8 r, u8 g, u8 b)
 {
     u8 *pixel;
@@ -234,6 +167,17 @@ static bool fb_map_range(u64 phys, u64 size)
 
     fb_front = (u8 *)(FB_VIRT_BASE + (phys & 0xFFFull));
     fb_base = fb_front;
+
+    /* Log the reserved span so a driver mapping MMIO on top of the
+     * framebuffer is obvious in the boot log instead of showing up as a
+     * stale band on screen. */
+    serial_write("fb: virt window ");
+    serial_print_hex((u32)(FB_VIRT_BASE >> 32));
+    serial_print_hex((u32)FB_VIRT_BASE);
+    serial_write(" .. ");
+    serial_print_hex((u32)((FB_VIRT_BASE + pages * PAGE_SIZE) >> 32));
+    serial_print_hex((u32)(FB_VIRT_BASE + pages * PAGE_SIZE));
+    serial_write("\n");
     return true;
 }
 
@@ -281,7 +225,8 @@ bool fb_get_pixel(u32 x, u32 y, u8 *r, u8 *g, u8 *b)
     u8 *pixel;
     u32 offset;
 
-    if (!fb_ready || x >= fb_w || y >= fb_h || r == NULL || g == NULL || b == NULL) {
+    if (!fb_ready || fb_base == NULL || x >= fb_w || y >= fb_h ||
+        r == NULL || g == NULL || b == NULL) {
         return false;
     }
 
@@ -427,7 +372,6 @@ void fb_overlay(u8 r, u8 g, u8 b, u8 alpha)
                 row[x] = fb_pack32(nr, ng, nb);
             }
         }
-        fb_repair_spike_rows(fb_base);
         fb_seal_edges();
         return;
     }
@@ -437,7 +381,6 @@ void fb_overlay(u8 r, u8 g, u8 b, u8 alpha)
             fb_blend_pixel(x, y, r, g, b, alpha);
         }
     }
-    fb_repair_spike_rows(fb_base);
 }
 
 void fb_hline(u32 x, u32 y, u32 w, u8 r, u8 g, u8 b)
@@ -489,7 +432,7 @@ static bool bga_available(void)
 }
 
 /* Prefer modes that VirtualBox/QEMU actually honor via Bochs VBE. */
-static bool bga_try_mode(u16 width, u16 height, u16 bpp)
+static bool bga_try_mode(u16 width, u16 height, u16 bpp, bool clamp_cols)
 {
     u16 got_w;
     u16 got_h;
@@ -505,11 +448,22 @@ static bool bga_try_mode(u16 width, u16 height, u16 bpp)
     bga_write(VBE_DISPI_INDEX_XRES, width);
     bga_write(VBE_DISPI_INDEX_YRES, height);
     bga_write(VBE_DISPI_INDEX_BPP, bpp);
-    virt_width = width;
-    x_offset = 0;
+    if (clamp_cols) {
+        virt_width = (u16)(width + 2u);
+        x_offset = 1;
+    } else {
+        virt_width = width;
+        x_offset = 0;
+    }
+    /* Single virtual page, scanned from Y_OFFSET=0 only. A double-height
+     * surface + Y_OFFSET page-flip looked tear-free in a settled snapshot,
+     * but VBoxVGA renders the panned (offset) page with a 1px full-width
+     * seam on the host. Because a full re-present flips pages, that seam
+     * blinked in lockstep with the text caret (every caret toggle = one
+     * flip). Staying on page 0 removes the seam entirely. */
     bga_write(VBE_DISPI_INDEX_VIRT_WIDTH, virt_width);
     bga_write(VBE_DISPI_INDEX_VIRT_HEIGHT, height);
-    bga_write(VBE_DISPI_INDEX_X_OFFSET, 0);
+    bga_write(VBE_DISPI_INDEX_X_OFFSET, x_offset);
     bga_write(VBE_DISPI_INDEX_Y_OFFSET, 0);
     bga_write(VBE_DISPI_INDEX_ENABLE,
               (u16)(VBE_DISPI_ENABLED | VBE_DISPI_LFB_ENABLED | VBE_DISPI_8BIT_DAC));
@@ -524,10 +478,18 @@ static bool bga_try_mode(u16 width, u16 height, u16 bpp)
     fb_w = width;
     fb_h = height;
     fb_bits = (u8)bpp;
-    fb_x0 = 0;
-    fb_pitch_bytes = (u32)width * (bpp / 8u);
+    if (clamp_cols) {
+        fb_x0 = 1;
+        fb_pitch_bytes = (u32)(width + 2u) * (bpp / 8u);
+    } else {
+        fb_x0 = 0;
+        fb_pitch_bytes = (u32)width * (bpp / 8u);
+    }
     fb_page_bytes = fb_pitch_bytes * (u32)height;
     fb_vis_page = 0;
+
+    /* No hardware page-flip: it caused a host-side seam on the panned page
+     * (see comment above). Present is a single clean copy onto page 0. */
     fb_flip_ok = false;
     (void)x_offset;
     (void)virt_width;
@@ -598,11 +560,11 @@ static bool fb_upgrade_mode(void)
         return false;
     }
 
-    /* Match the host/GRUB framebuffer. Never force 1920x1080. */
+    /* Match the host/GRUB framebuffer when Multiboot handed a different size. */
     if (fb_want_w != 0 && fb_want_h != 0 &&
         (fb_want_w != fb_w || fb_want_h != fb_h)) {
         serial_write("fb: setting native mode via Bochs VBE\n");
-        if (bga_try_mode((u16)fb_want_w, (u16)fb_want_h, 32)) {
+        if (bga_try_mode((u16)fb_want_w, (u16)fb_want_h, 32, false)) {
             serial_write("fb: Bochs VBE set ");
             serial_print_u32(fb_w);
             serial_write("x");
@@ -612,6 +574,28 @@ static bool fb_upgrade_mode(void)
         }
         serial_write("fb: native Bochs mode failed; keeping Multiboot\n");
     }
+
+    /*
+     * Multiboot often already hands us 1920x1080 with a tight pitch.
+     * That path used to return here, so the 1px clamp columns never
+     * installed — host filtering then shows wallpaper hairlines at the
+     * bottom left/right. Re-set the same mode to get the padded pitch.
+     */
+    if (fb_w >= 1920u && fb_h >= 1080u) {
+        if (fb_x0 > 0) {
+            return true;
+        }
+        if (bga_try_mode((u16)fb_w, (u16)fb_h, 32, true)) {
+            serial_write("fb: Bochs VBE clamp columns on ");
+            serial_print_u32(fb_w);
+            serial_write("x");
+            serial_print_u32(fb_h);
+            serial_write("\n");
+            return true;
+        }
+        return false;
+    }
+
     return false;
 }
 
@@ -668,6 +652,16 @@ void fb_init(const void *mb2_addr)
     fb_h = fb->height;
     fb_pitch_bytes = fb->pitch;
     fb_bits = fb->bpp;
+    {
+        u32 pitch_px = fb_pitch_bytes / fb_pxb();
+
+        if (pitch_px > fb_w) {
+            fb_x0 = (pitch_px - fb_w) / 2u;
+            if (fb_x0 == 0) {
+                fb_x0 = 1;
+            }
+        }
+    }
 
     serial_write("fb: Multiboot ");
     serial_print_u32(fb_w);
@@ -679,7 +673,12 @@ void fb_init(const void *mb2_addr)
 
     (void)fb_upgrade_mode();
 
+    /* Map both stacked pages when hardware double buffering is on so the
+     * hidden page is real memory, plus slack for alignment. */
     bytes = (u64)fb_pitch_bytes * (u64)fb_h;
+    if (fb_flip_ok) {
+        bytes *= 2ull;
+    }
     bytes += 0x200000ull;
     if (!fb_map_range(fb_phys, bytes)) {
         serial_write("fb: map failed\n");
@@ -699,6 +698,8 @@ void fb_init(const void *mb2_addr)
     serial_write("x");
     serial_print_u32(fb_bits);
     serial_write("\n");
+    serial_write(fb_flip_ok ? "fb: hw page-flip ENABLED\n"
+                            : "fb: hw page-flip OFF (single buffer)\n");
 }
 
 static u32 fb_pixel_bytes(void)
@@ -831,72 +832,36 @@ static void fb_store_layer(u8 *dst, const u8 *src)
 static void fb_fill_page(u8 *page)
 {
     fb_store_layer(page, fb_back);
-    fb_store_layer(page, fb_back);
-    fb_repair_spike_rows(page);
 }
 
-/* Front must match the RAM scene. A leftover splash/frost (or black)
- * scanline differs from back; neighbour-average repair can miss it. */
-static void fb_resync_to_back(u8 *dst)
+/* Seal edges/clamp columns of an arbitrary page (not necessarily fb_base). */
+static void fb_seal_page(u8 *page)
 {
     u32 y;
-    u32 x;
-    u32 step;
 
-    if (fb_bits != 32 || dst == NULL || fb_back == NULL || fb_w < 8u) {
+    if (fb_bits != 32 || page == NULL) {
         return;
     }
-    step = fb_w / 16u;
-    if (step == 0) {
-        step = 1;
-    }
-    for (y = 0; y < fb_h; ++y) {
-        u32 *d = fb_vis32(dst, y);
-        const u32 *s = fb_vis32(fb_back, y);
-        u32 bad = 0;
-
-        for (x = 0; x < fb_w; x += step) {
-            if (d[x] != s[x]) {
-                ++bad;
-            }
+    if (fb_x0 > 0) {
+        for (y = 0; y < fb_h; ++y) {
+            u32 *raw = (u32 *)(page + y * fb_pitch_bytes);
+            raw[0] = raw[fb_x0];
+            raw[fb_x0 + fb_w] = raw[fb_x0 + fb_w - 1u];
         }
-        if (bad == 0) {
-            continue;
-        }
-        for (x = 0; x < fb_w; ++x) {
-            d[x] = s[x];
-        }
-    }
-}
-
-static void fb_touch_band(u8 *dst)
-{
-    u32 y0;
-    u32 y;
-    u32 x;
-
-    if (fb_bits != 32 || dst == NULL || fb_back == NULL || fb_h < 8u) {
-        return;
-    }
-    /* The hairline sat ~127px from the bottom. Rewrite that band last so
-     * a host snapshot of the big copy is replaced by the finished rows. */
-    y0 = (fb_h > 160u) ? (fb_h - 160u) : 0;
-    for (y = y0; y < fb_h; ++y) {
-        const u32 *s = fb_vis32(fb_back, y);
-        volatile u32 *d = (volatile u32 *)fb_vis32(dst, y);
-
-        for (x = 0; x < fb_w; ++x) {
-            d[x] = s[x];
-        }
+    } else {
+        fb_halo_all(page);
     }
 }
 
 static void fb_memcpy_visible(void)
 {
-    fb_repair_spike_rows(fb_back);
+    /* One clean top-of-frame copy of the finished scene onto the live page,
+     * then seal the edges. No second "repair" pass: a separate band re-copy
+     * is exactly what let a host snapshot catch the buffer mid-write and
+     * show a 1px seam. Consecutive frames differ only by the caret/cursor,
+     * so a single-buffer copy has no visible tear. */
     fb_fill_page(fb_front);
-    fb_resync_to_back(fb_front);
-    fb_touch_band(fb_front);
+    fb_seal_page(fb_front);
 }
 
 void fb_compose_present(void)
@@ -939,7 +904,6 @@ void fb_present_dimmed(u8 black_alpha)
             }
             fb_halo_row(page, y);
         }
-        fb_repair_spike_rows(page);
         fb_flip_hidden();
         fb_scene_dirty = false;
         fb_base = fb_visible_page();
@@ -1069,7 +1033,6 @@ void fb_blend_to_front(const u8 *from, u8 amount)
             }
             fb_halo_row(page, y);
         }
-        fb_repair_spike_rows(page);
         fb_flip_hidden();
         fb_scene_dirty = false;
         fb_base = fb_visible_page();
@@ -1218,10 +1181,17 @@ void fb_cover_src_xy(u32 src_w, u32 src_h, u32 dx, u32 dy, u32 *sx, u32 *sy)
 
 static void fb_seal_edges(void)
 {
-    if (fb_bits == 32 && fb_base != NULL && fb_x0 == 0) {
+    u32 y;
+
+    if (fb_bits == 32 && fb_base != NULL && fb_x0 > 0) {
+        for (y = 0; y < fb_h; ++y) {
+            u32 *raw = (u32 *)(fb_base + y * fb_pitch_bytes);
+            raw[0] = raw[fb_x0];
+            raw[fb_x0 + fb_w] = raw[fb_x0 + fb_w - 1u];
+        }
+    } else if (fb_bits == 32 && fb_base != NULL && fb_x0 == 0) {
         fb_halo_all(fb_base);
     }
-    fb_repair_spike_rows(fb_base);
 }
 
 void fb_blit_rgb_cover(const u8 *rgb, u32 src_w, u32 src_h)
@@ -1242,21 +1212,10 @@ void fb_blit_rgb_cover(const u8 *rgb, u32 src_w, u32 src_h)
     if (fb_bits == 32 && src_w == fb_w && src_h == fb_h) {
         for (y = 0; y < fb_h; ++y) {
             u32 *row = fb_vis32(fb_base, y);
+            const u8 *src_row = rgb + y * src_w * 3u;
             for (x = 0; x < fb_w; ++x) {
-                const u8 *src = rgb + (y * src_w + x) * 3u;
+                const u8 *src = src_row + x * 3u;
                 row[x] = fb_pack32(src[0], src[1], src[2]);
-            }
-        }
-        /* Rewrite any pixel that is not the photo. A missed scanline
-         * left the frosted splash as a 1px band at y=h-128. */
-        for (y = 0; y < fb_h; ++y) {
-            u32 *row = fb_vis32(fb_base, y);
-            for (x = 0; x < fb_w; ++x) {
-                const u8 *src = rgb + (y * src_w + x) * 3u;
-                u32 want = fb_pack32(src[0], src[1], src[2]);
-                if (row[x] != want) {
-                    row[x] = want;
-                }
             }
         }
         fb_seal_edges();

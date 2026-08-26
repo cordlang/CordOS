@@ -702,6 +702,49 @@ static u32 glyph_advance(u32 index, u32 scale)
     return advance;
 }
 
+static u8 draw_rec601_luma(u8 r, u8 g, u8 b)
+{
+    return (u8)(((u32)r * 77u + (u32)g * 150u + (u32)b * 29u) >> 8);
+}
+
+bool draw_region_is_light(u32 x, u32 y, u32 w, u32 h)
+{
+    const u32 nx = 6u;
+    const u32 ny = 3u;
+    u32 gx;
+    u32 gy;
+    u32 sum = 0;
+    u32 n = 0;
+    u32 fw = fb_width();
+    u32 fh = fb_height();
+
+    if (w == 0 || h == 0 || fw == 0 || fh == 0) {
+        return false;
+    }
+    for (gy = 0; gy < ny; ++gy) {
+        u32 py = y + (h * (2u * gy + 1u)) / (2u * ny);
+        if (py >= fh) {
+            py = fh - 1u;
+        }
+        for (gx = 0; gx < nx; ++gx) {
+            u32 px = x + (w * (2u * gx + 1u)) / (2u * nx);
+            u8 r;
+            u8 g;
+            u8 b;
+
+            if (px >= fw) {
+                px = fw - 1u;
+            }
+            if (!fb_get_pixel(px, py, &r, &g, &b)) {
+                continue;
+            }
+            sum += draw_rec601_luma(r, g, b);
+            ++n;
+        }
+    }
+    return n != 0u && (sum / n) >= 128u;
+}
+
 static u32 draw_glyph(u32 x, u32 y, u32 codepoint, struct rgb color, u32 scale)
 {
     const u8 *cover;
@@ -1302,7 +1345,12 @@ void draw_field(u32 x, u32 y, u32 w, u32 h, const char *text, bool password,
     u32 tx;
     u32 ty;
     u32 rad = h / 2u > THEME_RAD_FIELD ? THEME_RAD_FIELD : h / 2u;
+    bool light = draw_region_is_light(x, y, w, h);
+    struct rgb border = light ? (struct rgb){ 0x1A, 0x1A, 0x1C }
+                              : (struct rgb){ 0xF7, 0xF8, 0xFA };
 
+    draw_round_fill(x > 0u ? x - 1u : 0u, y > 0u ? y - 1u : 0u,
+                    w + 2u, h + 2u, rad + 1u, border, focused ? 230u : 150u);
     draw_round_fill(x, y, w, h, rad, THEME_FIELD, 230u);
     if (focused) {
         draw_round_fill(x, y, w, 3, 2, THEME_ACCENT, 255u);
@@ -1341,6 +1389,12 @@ void draw_button(u32 x, u32 y, u32 w, u32 h, const char *label, bool focused)
     u32 tx;
     u32 ty;
     u32 rad = h < THEME_RAD_BTN * 2u ? h / 2u : THEME_RAD_BTN;
+    bool light = draw_region_is_light(x, y, w, h);
+    struct rgb border = light ? (struct rgb){ 0x1A, 0x1A, 0x1C }
+                              : (struct rgb){ 0xF7, 0xF8, 0xFA };
+
+    draw_round_fill(x > 0u ? x - 1u : 0u, y > 0u ? y - 1u : 0u,
+                    w + 2u, h + 2u, rad + 1u, border, focused ? 230u : 150u);
 
     if (focused) {
         draw_round_fill(x, y, w, h, rad, THEME_ACCENT, 255u);

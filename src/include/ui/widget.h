@@ -11,6 +11,8 @@ bool ui_took_click(void);
 void ui_want_full(void);
 /* Chrome was redrawn; widgets must stamp again before present. */
 void ui_invalidate(void);
+/* Override the default arrow/hand choice for non-widget hit targets. */
+void ui_set_cursor_kind(enum cursor_kind kind);
 
 bool ui_button(u32 id, u32 x, u32 y, u32 w, u32 h, const char *label,
                bool selected, bool enabled);

@@ -33,6 +33,8 @@ static bool s_pointer;
 static bool s_busy;
 static bool s_want_full;
 static bool s_begun;
+static bool s_cursor_override;
+static enum cursor_kind s_cursor_kind;
 
 static u8 mix_u8(u8 a, u8 b, u8 t)
 {
@@ -85,10 +87,13 @@ static void paint_glass(u32 x, u32 y, u32 w, u32 h, u8 focus)
     u8 glass_a = mix_u8(38u, 86u, focus);
     u8 rim_a = mix_u8(16u, 64u, focus);
     u32 rad = h / 2u;
+    struct rgb rim = draw_region_is_light(x, y, w, h)
+                         ? (struct rgb){ 0x1A, 0x1A, 0x1C }
+                         : W_WHITE;
 
     fb_compose_begin();
     if (x > 0 && y > 0) {
-        draw_round_fill(x - 1u, y - 1u, w + 2u, h + 2u, (h + 2u) / 2u, W_WHITE,
+        draw_round_fill(x - 1u, y - 1u, w + 2u, h + 2u, (h + 2u) / 2u, rim,
                         rim_a);
     }
     draw_glass(x, y, w, h, rad, W_GLASS, glass_a);
@@ -171,6 +176,7 @@ void ui_begin(i32 mx, i32 my, u8 buttons, u32 now_ms)
     s_pointer = false;
     s_busy = false;
     s_want_full = ui_comp_is_full();
+    s_cursor_override = false;
     s_begun = true;
     for (i = 0; i < s_n; ++i) {
         s_items[i].used = false;
@@ -194,6 +200,12 @@ void ui_invalidate(void)
     ui_comp_mark_full();
 }
 
+void ui_set_cursor_kind(enum cursor_kind kind)
+{
+    s_cursor_override = true;
+    s_cursor_kind = kind;
+}
+
 void ui_end(void)
 {
     u32 i;
@@ -205,7 +217,11 @@ void ui_end(void)
         }
     }
     s_n = w;
-    cursor_set_kind(s_pointer ? CURSOR_KIND_POINTER : CURSOR_KIND_ARROW);
+    if (s_cursor_override) {
+        cursor_set_kind(s_cursor_kind);
+    } else {
+        cursor_set_kind(s_pointer ? CURSOR_KIND_POINTER : CURSOR_KIND_ARROW);
+    }
     if (s_want_full || ui_comp_has_damage()) {
         ui_comp_present();
     } else {
@@ -316,7 +332,7 @@ bool ui_icon_btn(u32 id, u32 x, u32 y, u32 w, u32 h, enum ui_icon icon,
     if (isz > 40u) {
         isz = 40u;
     }
-    it->target = (hot || accent) ? 255u : 0;
+    it->target = (hot || accent) ? 255u : UI_IDLE;
     prev = it->hover;
     next = approach(prev, it->target);
     it->hover = next;
@@ -329,9 +345,15 @@ bool ui_icon_btn(u32 id, u32 x, u32 y, u32 w, u32 h, enum ui_icon icon,
     if (!it->shown || prev != next || s_want_full) {
         it->shown = true;
         u8 a = (u8)(20u + ((u32)next * 150u) / 255u);
+        struct rgb rim = draw_region_is_light(x, y, w, h)
+                             ? (struct rgb){ 0x1A, 0x1A, 0x1C }
+                             : W_WHITE;
 
         fb_compose_begin();
         if (next > 8u) {
+            draw_round_fill(x + 5u, y + 7u, w > 10u ? w - 10u : w,
+                            h > 14u ? h - 14u : h, 15u, rim,
+                            a > 24u ? (u8)(a - 24u) : 20u);
             draw_round_fill(x + 6u, y + 8u, w > 12u ? w - 12u : w,
                             h > 16u ? h - 16u : h, 14u, THEME_HOVER, a);
         }

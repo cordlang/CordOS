@@ -174,6 +174,7 @@ KERNEL64_OBJS := \
 	out/isr64.o \
 	out/pit64.o \
 	out/time64.o \
+	out/rtc.o \
 	out/keyboard64.o \
 	out/mouse.o \
 	out/pmm64.o \
@@ -231,7 +232,7 @@ KERNEL64_OBJS := \
 	out/ata.o \
 	out/kernel64.o
 
-all: out/cordos.iso
+all: dist/cordos.iso
 
 # Syscall numbers 0–7 (docs/abi.md):
 #   SYS_EXIT=0 SYS_WRITE=1 SYS_READ=2 SYS_YIELD=3
@@ -301,6 +302,8 @@ out/smp.o: src/proc/smp.c $(PUB_HDRS) | build
 out/vga64.o: src/drivers/vga64.c $(PUB_HDRS) | build
 	$(CC64) $(CFLAGS64) -c $< -o $@
 out/time64.o: src/drivers/time.c $(PUB_HDRS) | build
+	$(CC64) $(CFLAGS64) -c $< -o $@
+out/rtc.o: src/drivers/rtc.c $(PUB_HDRS) | build
 	$(CC64) $(CFLAGS64) -c $< -o $@
 out/keyboard64.o: src/drivers/keyboard.c $(PUB_HDRS) | build
 	$(CC64) $(CFLAGS64) -c $< -o $@
@@ -450,21 +453,25 @@ out/cordos.iso: out/cordos.bin $(GRUBCFG) out/splash.png | build
 	cp $(GRUBCFG) out/isoroot/boot/grub/grub.cfg
 	$(GRUB_MKRESCUE) -o $@ out/isoroot -- -volid CORDOS
 
-run: out/cordos.iso
+dist/cordos.iso: out/cordos.iso | build
+	mkdir -p dist
+	cp out/cordos.iso dist/cordos.iso
+
+run: dist/cordos.iso
 	$(QEMU) -cdrom $< -vga std
 
 # 16 MiB zeroed raw disk. NOSF is formatted at first mount (LBA 2048).
 out/persist.img: | build
 	dd if=/dev/zero of=$@ bs=1048576 count=16 status=none
 
-run-persist: out/cordos.iso out/persist.img
-	$(QEMU) -cdrom out/cordos.iso -drive file=out/persist.img,format=raw,if=ide -boot order=d -vga std -serial stdio
+run-persist: dist/cordos.iso out/persist.img
+	$(QEMU) -cdrom dist/cordos.iso -drive file=out/persist.img,format=raw,if=ide -boot order=d -vga std -serial stdio
 
-run-vbox: out/cordos.iso
+run-vbox: dist/cordos.iso
 	@if command -v VBoxManage >/dev/null 2>&1; then \
 		bash scripts/run-vbox.sh; \
 	else \
-		echo "ISO lista: out/cordos.iso"; \
+		echo "ISO lista: dist/cordos.iso"; \
 		echo "En Windows (VirtualBox): .\\run-vbox.ps1"; \
 	fi
 

@@ -4,7 +4,8 @@
 $ErrorActionPreference = "Stop"
 
 $VmName = "CordOS"
-$IsoPath = Join-Path $PSScriptRoot "dist\cordos.iso"
+$DistIsoPath = Join-Path $PSScriptRoot "dist\cordos.iso"
+$IsoPath = $DistIsoPath
 if (-not (Test-Path -LiteralPath $IsoPath)) {
     $IsoPath = Join-Path $PSScriptRoot "out\cordos.iso"
 }
@@ -52,7 +53,18 @@ function Invoke-VBox {
 
 function Invoke-VBoxSoft {
     param([string[]]$VArgs)
-    & $script:VBoxManage @VArgs 2>$null | Out-Null
+    # Best-effort: these calls are expected to fail on some hosts/VM states.
+    # With the script-wide "Stop" preference, anything VBoxManage writes to
+    # stderr would otherwise abort the whole run, so drop the preference for
+    # the duration of the call and swallow both streams.
+    $prev = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    try {
+        & $script:VBoxManage @VArgs 2>&1 | Out-Null
+    } catch {
+    } finally {
+        $ErrorActionPreference = $prev
+    }
 }
 
 if (-not (Test-Path -LiteralPath $IsoPath)) {
@@ -168,6 +180,11 @@ if (-not (Test-Path -LiteralPath $grubDir)) {
     "}"
 ) | Set-Content -LiteralPath $grubAuto -Encoding ascii
 
+# The Windows and WSL clocks drift by a second or so, so a file just written
+# from here looks like it comes from the future to make, which warns on stderr
+# and aborts this script. Backdate it so the build stays quiet.
+(Get-Item -LiteralPath $grubAuto).LastWriteTime = (Get-Date).AddMinutes(-5)
+
 Write-Host "Reconstruyendo ISO con gfx=${gw}x${gh}..."
 & wsl -d Ubuntu -- bash -lc "cd /mnt/d/os && make ARCH=x86_64 GRUBCFG=kbuild/grub-auto.cfg"
 if ($LASTEXITCODE -ne 0) {
@@ -175,7 +192,11 @@ if ($LASTEXITCODE -ne 0) {
 } else {
     $builtIso = Join-Path $PSScriptRoot "out\cordos.iso"
     if (Test-Path -LiteralPath $builtIso) {
-        $IsoPath = $builtIso
+        if (-not (Test-Path -LiteralPath (Split-Path -Parent $DistIsoPath))) {
+            New-Item -ItemType Directory -Path (Split-Path -Parent $DistIsoPath) | Out-Null
+        }
+        Copy-Item -Force -LiteralPath $builtIso -Destination $DistIsoPath
+        $IsoPath = $DistIsoPath
     }
 }
 
@@ -189,10 +210,14 @@ Invoke-VBoxSoft -VArgs @("modifyvm", $VmName, "--memory", "512")
 # the other side of the wallpaper (1px L/R hairlines at the bottom).
 Invoke-VBoxSoft -VArgs @("modifyvm", $VmName, "--graphicscontroller", "VBoxVGA")
 Invoke-VBoxSoft -VArgs @("setextradata", $VmName, "GUI/ScaleFactor", "1")
-# Scaled Mode (View → Scaled) is independent of ScaleFactor. Leave it off
-# or the 1920 guest is bilinear-filtered into the widget and packed rows
-# wrap as 1px L/R hairlines at the bottom.
+# Scaled Mode (View -> Scaled) is independent of ScaleFactor. It MUST be
+# off: with it on, the 1920x1080 guest is bilinear-filtered down into the
+# window, and that downscale invents content-dependent 1px hairlines (the
+# "line" that seemed to depend on the onboarding language). The guest
+# framebuffer itself is pixel-perfect; the artifact is 100% host scaling.
+# Unset the key AND force it false so a prior Host+C toggle cannot linger.
 Invoke-VBoxSoft -VArgs @("setextradata", $VmName, "GUI/Scale")
+Invoke-VBoxSoft -VArgs @("setextradata", $VmName, "GUI/Scale", "false")
 Invoke-VBoxSoft -VArgs @("setextradata", $VmName, "GUI/MaxGuestResolution", "any")
 Invoke-VBoxSoft -VArgs @("setextradata", $VmName, "GUI/AutoresizeGuest", "false")
 Invoke-VBoxSoft -VArgs @("setextradata", $VmName, "CustomVideoMode1", "${gw}x${gh}x32")

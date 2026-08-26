@@ -23,13 +23,13 @@ en la memoria de video VGA.
 | `src/shell` | shell de emergencia, i18n |
 | `src/include/<módulo>` | headers públicos |
 
-La ISO queda en `dist/cordos.iso` (build: `out/cordos.iso`).
+La ISO queda en `dist/cordos.iso`; `out/` contiene solo los artefactos intermedios.
 
 ## Arquitectura (`ARCH`)
 
 | Comando | Resultado |
 |---|---|
-| `make` / `make ARCH=x86_64` | Build principal: long mode, Multiboot2, `out/cordos.iso` |
+| `make` / `make ARCH=x86_64` | Build principal: long mode, Multiboot2, `dist/cordos.iso` |
 | `make ARCH=i386` | Demo congelada: protegido 32-bit, Multiboot1, `out/cordos32.iso` |
 
 Toolchain 64: `x86_64-elf-gcc` / `x86_64-elf-ld` (recomendado en `~/opt/cross64`). En Windows, el path x86_64 va por WSL (`make`); `build.ps1` cubre solo i386.

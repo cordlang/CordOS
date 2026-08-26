@@ -15,6 +15,7 @@
 #include "keycodes.h"
 #include "mouse.h"
 #include "power.h"
+#include "rtc.h"
 #include "shell.h"
 #include "theme.h"
 #include "time.h"
@@ -115,45 +116,29 @@ static void login_wait_ms(u32 ms)
     }
 }
 
-static u8 cmos_read(u8 reg)
+static void login_clock(char *out, const struct rtc_time *now)
 {
-    outb(0x70, (u8)(reg | 0x80u));
-    return inb(0x71);
-}
-
-static u8 cmos_bcd(u8 v, bool binary)
-{
-    if (binary) {
-        return v;
-    }
-    return (u8)(((v >> 4) * 10u) + (v & 0x0Fu));
-}
-
-static void login_clock(char *out)
-{
-    u8 b = cmos_read(0x0B);
-    bool binary = (b & 0x04u) != 0;
-    u8 hour = cmos_bcd(cmos_read(0x04), binary);
-    u8 min = cmos_bcd(cmos_read(0x02), binary);
-
-    if ((b & 0x02u) == 0) {
-        hour &= 0x7Fu;
-    }
-    if (hour > 23u) {
-        hour = 0;
-    }
-    if (min > 59u) {
-        min = 0;
-    }
-    out[0] = (char)('0' + (hour / 10u));
-    out[1] = (char)('0' + (hour % 10u));
+    out[0] = (char)('0' + (now->hour / 10u));
+    out[1] = (char)('0' + (now->hour % 10u));
     out[2] = ':';
-    out[3] = (char)('0' + (min / 10u));
-    out[4] = (char)('0' + (min % 10u));
+    out[3] = (char)('0' + (now->minute / 10u));
+    out[4] = (char)('0' + (now->minute % 10u));
     out[5] = '\0';
 }
 
-static void login_date(char *out, u32 out_len)
+static u8 login_weekday(u16 year, u8 month, u8 day)
+{
+    static const u8 offsets[12] = { 0, 3, 2, 5, 0, 3, 5, 1, 4, 6, 2, 4 };
+    u32 y = year;
+
+    if (month < 3u) {
+        --y;
+    }
+    return (u8)((y + y / 4u - y / 100u + y / 400u +
+                 offsets[month - 1u] + day) % 7u + 1u);
+}
+
+static void login_date(char *out, u32 out_len, const struct rtc_time *now)
 {
     static const char *const days_en[] = {
         "Sunday", "Monday", "Tuesday", "Wednesday",
@@ -171,11 +156,9 @@ static void login_date(char *out, u32 out_len)
         "enero", "febrero", "marzo", "abril", "mayo", "junio",
         "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"
     };
-    u8 b = cmos_read(0x0B);
-    bool binary = (b & 0x04u) != 0;
-    u8 weekday = cmos_bcd(cmos_read(0x06), binary);
-    u8 day = cmos_bcd(cmos_read(0x07), binary);
-    u8 month = cmos_bcd(cmos_read(0x08), binary);
+    u8 weekday = login_weekday(now->year, now->month, now->day);
+    u8 day = now->day;
+    u8 month = now->month;
     const char *wd;
     const char *mo;
     u32 i = 0;
@@ -298,88 +281,6 @@ static void login_layout(struct login_geom *g)
     g->go_y = g->pass_y + (g->pass_h > LOGIN_GO ? (g->pass_h - LOGIN_GO) / 2u : 0);
 }
 
-static u8 rec601_luma(u8 r, u8 g, u8 b)
-{
-    return (u8)(((u32)r * 77u + (u32)g * 150u + (u32)b * 29u) >> 8);
-}
-
-static bool login_wp_at(u32 x, u32 y, u8 *r, u8 *g, u8 *b)
-{
-    const u8 *rgb = wallpaper_login_pixels();
-    u32 fb_w = fb_width();
-    u32 fb_h = fb_height();
-    u32 copy_w;
-    u32 copy_h;
-    u32 src_x0;
-    u32 src_y0;
-    u32 dst_x0;
-    u32 dst_y0;
-    u32 sx;
-    u32 sy;
-    const u8 *p;
-
-    *r = 0x12;
-    *g = 0x16;
-    *b = 0x1C;
-    if (rgb == NULL || fb_w == 0 || fb_h == 0) {
-        return false;
-    }
-    copy_w = (WALLPAPER_W < fb_w) ? WALLPAPER_W : fb_w;
-    copy_h = (WALLPAPER_H < fb_h) ? WALLPAPER_H : fb_h;
-    src_x0 = (WALLPAPER_W > fb_w) ? (WALLPAPER_W - fb_w) / 2u : 0;
-    src_y0 = (WALLPAPER_H > fb_h) ? (WALLPAPER_H - fb_h) / 2u : 0;
-    dst_x0 = (fb_w > WALLPAPER_W) ? (fb_w - WALLPAPER_W) / 2u : 0;
-    dst_y0 = (fb_h > WALLPAPER_H) ? (fb_h - WALLPAPER_H) / 2u : 0;
-    if (x < dst_x0 || y < dst_y0) {
-        return false;
-    }
-    sx = src_x0 + (x - dst_x0);
-    sy = src_y0 + (y - dst_y0);
-    if (sx >= src_x0 + copy_w || sy >= src_y0 + copy_h ||
-        sx >= WALLPAPER_W || sy >= WALLPAPER_H) {
-        return false;
-    }
-    p = rgb + (sy * WALLPAPER_W + sx) * 3u;
-    *r = p[0];
-    *g = p[1];
-    *b = p[2];
-    return true;
-}
-
-static bool login_region_is_light(u32 x, u32 y, u32 w, u32 h)
-{
-    u32 gx;
-    u32 gy;
-    u32 sum = 0;
-    u32 n = 0;
-    const u32 nx = 6u;
-    const u32 ny = 3u;
-
-    if (w == 0 || h == 0) {
-        return false;
-    }
-    for (gy = 0; gy < ny; ++gy) {
-        u32 py = y + (h * (2u * gy + 1u)) / (2u * ny);
-        for (gx = 0; gx < nx; ++gx) {
-            u32 px = x + (w * (2u * gx + 1u)) / (2u * nx);
-            u8 r;
-            u8 g;
-            u8 b;
-            u8 luma;
-            login_wp_at(px, py, &r, &g, &b);
-            luma = rec601_luma(r, g, b);
-            /* Match the light overlay drawn over the wallpaper. */
-            luma = (u8)(((u32)luma * 233u + 9u * 22u) / 255u);
-            sum += luma;
-            ++n;
-        }
-    }
-    if (n == 0) {
-        return false;
-    }
-    return (sum / n) >= 128u;
-}
-
 static void draw_login_label(u32 x, u32 y, const char *text, u32 scale,
                              bool on_light)
 {
@@ -473,10 +374,12 @@ static void paint_login_screen(const struct login_draw *d)
     u8 focus;
     struct rgb tint;
     bool has_pass;
+    struct rtc_time now = { 0, 0, 0, 1, 1, 2000 };
 
     login_layout(&g);
-    login_clock(clock);
-    login_date(date, sizeof(date));
+    (void)rtc_read(&now);
+    login_clock(clock, &now);
+    login_date(date, sizeof(date), &now);
     pass_x = (u32)((i32)g.pass_x + d->shake_x);
     go_x = (u32)((i32)g.go_x + d->shake_x);
     if (d->focused) {
@@ -499,7 +402,7 @@ static void paint_login_screen(const struct login_draw *d)
         u32 band_x = (dx < cx) ? dx : cx;
         u32 band_w = date_w > clock_w ? date_w : clock_w;
         u32 band_h = (g.clock_y - g.date_y) + FONT_TITLE_H;
-        bool time_light = login_region_is_light(band_x, g.date_y, band_w, band_h);
+        bool time_light = draw_region_is_light(band_x, g.date_y, band_w, band_h);
         struct rgb chrome = time_light ? LOGIN_INK : LOGIN_WHITE;
 
         cursor_set_on_light(time_light);
@@ -518,8 +421,13 @@ static void paint_login_screen(const struct login_draw *d)
         glass_a = mix_u8(38u, 86u, focus);
         rim_a = mix_u8(16u, 64u, focus);
 
-        draw_round_fill(pass_x - 1u, g.pass_y - 1u, g.pass_w + 2u, g.pass_h + 2u,
-                        (g.pass_h + 2u) / 2u, LOGIN_WHITE, rim_a);
+        draw_round_fill(pass_x > 0u ? pass_x - 1u : 0u,
+                        g.pass_y > 0u ? g.pass_y - 1u : 0u,
+                        g.pass_w + 2u, g.pass_h + 2u,
+                        (g.pass_h + 2u) / 2u,
+                        draw_region_is_light(pass_x, g.pass_y, g.pass_w, g.pass_h)
+                            ? LOGIN_INK : LOGIN_WHITE,
+                        rim_a);
         draw_glass(pass_x, g.pass_y, g.pass_w, g.pass_h, g.pass_h / 2u, tint, glass_a);
         if (g.pass_w > 24u) {
             draw_round_fill(pass_x + 12u, g.pass_y + 1u, g.pass_w - 24u, 1u, 0,
@@ -546,7 +454,9 @@ static void paint_login_screen(const struct login_draw *d)
             draw_round_fill(go_x > 0 ? go_x - 1u : 0,
                             g.go_y > 0 ? g.go_y - 1u : 0,
                             LOGIN_GO + 2u, LOGIN_GO + 2u, (LOGIN_GO + 2u) / 2u,
-                            LOGIN_WHITE, rim_a);
+                            draw_region_is_light(go_x, g.go_y, LOGIN_GO, LOGIN_GO)
+                                ? LOGIN_INK : LOGIN_WHITE,
+                            rim_a);
             draw_glass(go_x, g.go_y, LOGIN_GO, LOGIN_GO, LOGIN_GO / 2u, tint, go_a);
             draw_go_arrow(go_x + LOGIN_GO / 2u, g.go_y + LOGIN_GO / 2u, chrome);
         }
@@ -554,7 +464,10 @@ static void paint_login_screen(const struct login_draw *d)
         draw_round_fill(g.power_x > 0 ? g.power_x - 1u : 0,
                         g.power_y > 0 ? g.power_y - 1u : 0,
                         LOGIN_POWER + 2u, LOGIN_POWER + 2u,
-                        (LOGIN_POWER + 2u) / 2u, LOGIN_WHITE,
+                        (LOGIN_POWER + 2u) / 2u,
+                        draw_region_is_light(g.power_x, g.power_y,
+                                             LOGIN_POWER, LOGIN_POWER)
+                            ? LOGIN_INK : LOGIN_WHITE,
                         d->power_hot ? 70u : 22u);
         draw_glass(g.power_x, g.power_y, LOGIN_POWER, LOGIN_POWER,
                    LOGIN_POWER / 2u, tint, d->power_hot ? 92u : 56u);
@@ -801,7 +714,7 @@ static bool gfx_login(void)
         }
 
         {
-            u8 min = cmos_bcd(cmos_read(0x02), (cmos_read(0x0B) & 0x04u) != 0);
+            struct rtc_time rtc_now;
             u32 now = time_uptime_ms();
             bool caret = focused && (((now / 520u) & 1u) == 0u);
             u32 live = login_hit_sticky(mouse_x(), mouse_y(), s_login_hover);
@@ -809,8 +722,8 @@ static bool gfx_login(void)
             bool next_pass = (live == HIT_PASS);
             bool next_power = (live == HIT_POWER);
 
-            if (min != last_min) {
-                last_min = min;
+            if (rtc_read(&rtc_now) && rtc_now.minute != last_min) {
+                last_min = rtc_now.minute;
                 dirty = true;
             }
             s_login_hover = live;

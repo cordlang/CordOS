@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# Arranca out/cordos.iso en VirtualBox (Linux host).
+# Arranca dist/cordos.iso en VirtualBox (Linux host).
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-ISO="$ROOT/out/cordos.iso"
+ISO="$ROOT/dist/cordos.iso"
 if [[ ! -f "$ISO" ]]; then
-    ISO="$ROOT/dist/cordos.iso"
+    ISO="$ROOT/out/cordos.iso"
 fi
 VM_NAME="CordOS"
 
@@ -87,6 +87,9 @@ menuentry "CordOS" {
 }
 EOF
 make -C "$ROOT" ARCH=x86_64 GRUBCFG=build/grub-auto.cfg || echo "Aviso: ISO no reconstruida"
+if [[ -f "$ROOT/dist/cordos.iso" ]]; then
+    ISO="$ROOT/dist/cordos.iso"
+fi
 
 echo "Ajustando VirtualBox a ${GW}x${GH} 1:1 (sin zoom)..."
 VBoxManage modifyvm "$VM_NAME" --nic1 nat --nictype1 82540EM --cableconnected1 on

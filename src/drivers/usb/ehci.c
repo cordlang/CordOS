@@ -6,7 +6,24 @@
 #include "time.h"
 #include "vmm.h"
 
-#define USB_MMIO_BASE 0xFFFF800000800000ull
+/*
+ * Kernel MMIO windows (high canonical half). Keep these far apart and above
+ * the framebuffer window, which starts at FB_VIRT_BASE 0xFFFF800000100000
+ * and grows with the mode: a 1920x1080x32 surface already spans ~10 MiB, and
+ * an 8K surface spans ~128 MiB.
+ *
+ *   0xFFFF800000100000  framebuffer  (fb.c, size depends on the video mode)
+ *   0xFFFF800010000000  e1000 NIC    (e1000.c)
+ *   0xFFFF800020000000  EHCI USB     (here)
+ *
+ * This used to be 0xFFFF800000800000, which is FB_VIRT_BASE + 0x700000 —
+ * exactly inside the framebuffer window. Mapping the BAR there silently
+ * replaced one framebuffer page-table entry, so every write to that 4 KiB
+ * page of the screen went to USB registers instead of VRAM. The result was
+ * a permanently stale 1px band (row 954/955 at 1920x1080) that no redraw or
+ * repair pass could ever fix, because the pixels never reached VRAM.
+ */
+#define USB_MMIO_BASE 0xFFFF800020000000ull
 #define USB_MAX_DEV   4u
 #define QTD_TERM      0x1u
 
