@@ -52,6 +52,12 @@ void fb_compose_present(void);
 void fb_present_dimmed(u8 black_alpha);
 void fb_compose_present_rect(u32 x, u32 y, u32 w, u32 h);
 void fb_compose_copy_rect(u32 x, u32 y, u32 w, u32 h);
+/* Composite an RGBA sprite over the composed scene and land the whole rect on
+ * the visible page in one pass; pass rgba == NULL to just restore the scene.
+ * False means the fast path is unavailable (rect too large, or not 32bpp) and
+ * the caller should use its own path. */
+bool fb_present_sprite_rect(u32 rx, u32 ry, u32 rw, u32 rh,
+                            const u8 *rgba, u32 sw, u32 sh, i32 sx, i32 sy);
 void fb_copy_front(u8 *dst);
 void fb_blend_to_front(const u8 *from, u8 amount);
 u8 *fb_layer_alloc(void);

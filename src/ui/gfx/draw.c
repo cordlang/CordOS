@@ -1134,13 +1134,89 @@ static void cursor_hotspot(u32 *hot_x, u32 *hot_y, const u8 **spr)
     }
 }
 
+/* Screen box the sprite covers at (x, y), optionally unioned with a second
+ * position, clipped to the screen. False means nothing visible is left. */
+static bool cursor_box(i32 ax, i32 ay, bool with_b, i32 bx, i32 by,
+                       u32 *rx, u32 *ry, u32 *rw, u32 *rh)
+{
+    i32 x0 = ax;
+    i32 y0 = ay;
+    i32 x1 = ax + (i32)CURSOR_W;
+    i32 y1 = ay + (i32)CURSOR_H;
+    i32 fw = (i32)fb_width();
+    i32 fh = (i32)fb_height();
+
+    if (with_b) {
+        if (bx < x0) {
+            x0 = bx;
+        }
+        if (by < y0) {
+            y0 = by;
+        }
+        if (bx + (i32)CURSOR_W > x1) {
+            x1 = bx + (i32)CURSOR_W;
+        }
+        if (by + (i32)CURSOR_H > y1) {
+            y1 = by + (i32)CURSOR_H;
+        }
+    }
+    if (x0 < 0) {
+        x0 = 0;
+    }
+    if (y0 < 0) {
+        y0 = 0;
+    }
+    if (x1 > fw) {
+        x1 = fw;
+    }
+    if (y1 > fh) {
+        y1 = fh;
+    }
+    if (x1 <= x0 || y1 <= y0) {
+        return false;
+    }
+    *rx = (u32)x0;
+    *ry = (u32)y0;
+    *rw = (u32)(x1 - x0);
+    *rh = (u32)(y1 - y0);
+    return true;
+}
+
+static bool cursor_paint(i32 x, i32 y, bool with_old, const u8 *spr)
+{
+    u32 rx;
+    u32 ry;
+    u32 rw;
+    u32 rh;
+
+    if (!cursor_box(x, y, with_old, cursor_sx, cursor_sy, &rx, &ry, &rw, &rh)) {
+        return false;
+    }
+    return fb_present_sprite_rect(rx, ry, rw, rh, spr, CURSOR_W, CURSOR_H,
+                                  x, y);
+}
+
+static void cursor_commit(i32 x, i32 y)
+{
+    cursor_sx = x;
+    cursor_sy = y;
+    cursor_on = true;
+    /* The staged path keeps no saved box, so make sure the fallback restore
+     * can never replay stale pixels later. */
+    cursor_under_ok = false;
+}
+
 static void cursor_erase(void)
 {
     if (!cursor_on) {
         return;
     }
     fb_compose_end();
-    cursor_restore_under();
+    if (cursor_paint(cursor_sx, cursor_sy, false, NULL)) {
+        cursor_under_ok = false;
+    } else {
+        cursor_restore_under();
+    }
     cursor_on = false;
 }
 
@@ -1285,6 +1361,8 @@ static void cursor_stamp(u32 x, u32 y)
     u32 hot_y;
     u32 fw = fb_width();
     u32 fh = fb_height();
+    i32 nx;
+    i32 ny;
 
     if (fw == 0 || fh == 0) {
         return;
@@ -1296,10 +1374,45 @@ static void cursor_stamp(u32 x, u32 y)
         y = fh - 1u;
     }
     cursor_hotspot(&hot_x, &hot_y, &spr);
-    (void)spr;
+    nx = (i32)x - (i32)hot_x;
+    ny = (i32)y - (i32)hot_y;
     fb_compose_end();
+
+    /* One pass over the old and the new box together. The pointer is never
+     * absent from the framebuffer between erasing and drawing, and never
+     * half drawn, because the rect is finished in RAM before it is copied. */
+    if (cursor_paint(nx, ny, cursor_on, spr)) {
+        cursor_commit(nx, ny);
+        return;
+    }
+
+    /* Pointer jumped further than one staged rect can cover. Draw the new
+     * box first and clear the old one after, so the worst case is briefly
+     * seeing two pointers rather than none. The two boxes cannot overlap at
+     * this distance, so clearing the old one cannot erase the new one. */
+    if (cursor_paint(nx, ny, false, spr)) {
+        i32 ox = cursor_sx;
+        i32 oy = cursor_sy;
+        bool had_old = cursor_on;
+
+        cursor_commit(nx, ny);
+        if (had_old) {
+            u32 rx;
+            u32 ry;
+            u32 rw;
+            u32 rh;
+
+            if (cursor_box(ox, oy, false, 0, 0, &rx, &ry, &rw, &rh)) {
+                (void)fb_present_sprite_rect(rx, ry, rw, rh, NULL,
+                                             CURSOR_W, CURSOR_H, 0, 0);
+            }
+        }
+        return;
+    }
+
+    /* Not 32bpp, or the scene buffer is not up yet. */
     cursor_restore_under();
-    cursor_save_under((i32)x - (i32)hot_x, (i32)y - (i32)hot_y);
+    cursor_save_under(nx, ny);
     cursor_blit_base(x, y);
 }
 

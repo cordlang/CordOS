@@ -975,6 +975,88 @@ void fb_compose_copy_rect(u32 x, u32 y, u32 w, u32 h)
     fb_compose_present_rect(x, y, w, h);
 }
 
+/* Staging area for fb_present_sprite_rect. Sized for the union of two cursor
+ * boxes with headroom; callers must fall back if their rect is larger. */
+#define FB_SPRITE_STAGE_W 96u
+#define FB_SPRITE_STAGE_H 96u
+static u32 fb_sprite_stage[FB_SPRITE_STAGE_W * FB_SPRITE_STAGE_H];
+
+bool fb_present_sprite_rect(u32 rx, u32 ry, u32 rw, u32 rh,
+                            const u8 *rgba, u32 sw, u32 sh, i32 sx, i32 sy)
+{
+    u32 row;
+    u32 col;
+
+    if (!fb_compose_ready() || fb_bits != 32 ||
+        rw == 0 || rh == 0 ||
+        rw > FB_SPRITE_STAGE_W || rh > FB_SPRITE_STAGE_H ||
+        rx >= fb_w || ry >= fb_h || rw > fb_w - rx || rh > fb_h - ry) {
+        return false;
+    }
+
+    /* Build the finished rect in RAM: the composed scene first, then the
+     * sprite blended on top. Nothing reaches the framebuffer until every
+     * pixel is final, so the host cannot sample a partially drawn sprite
+     * or a gap where the sprite used to be. */
+    for (row = 0; row < rh; ++row) {
+        const u32 *scene = fb_vis32(fb_back, ry + row) + rx;
+        u32 *out = fb_sprite_stage + (size_t)row * rw;
+        i32 srow;
+
+        for (col = 0; col < rw; ++col) {
+            out[col] = scene[col];
+        }
+
+        if (rgba == NULL) {
+            continue;
+        }
+        srow = (i32)(ry + row) - sy;
+        if (srow < 0 || (u32)srow >= sh) {
+            continue;
+        }
+        for (col = 0; col < rw; ++col) {
+            i32 scol = (i32)(rx + col) - sx;
+            u32 i;
+            u8 a;
+
+            if (scol < 0 || (u32)scol >= sw) {
+                continue;
+            }
+            i = ((u32)srow * sw + (u32)scol) * 4u;
+            a = rgba[i + 3u];
+            if (a == 0) {
+                continue;
+            }
+            if (a == 255u) {
+                out[col] = fb_pack32(rgba[i], rgba[i + 1u], rgba[i + 2u]);
+            } else {
+                u32 dst = out[col];
+
+                out[col] = fb_pack32(
+                    gamma_mix(rgba[i], (u8)((dst >> 16) & 0xFFu), a),
+                    gamma_mix(rgba[i + 1u], (u8)((dst >> 8) & 0xFFu), a),
+                    gamma_mix(rgba[i + 2u], (u8)(dst & 0xFFu), a));
+            }
+        }
+    }
+
+    {
+        u8 *vis = fb_visible_page();
+
+        for (row = 0; row < rh; ++row) {
+            const u32 *s = fb_sprite_stage + (size_t)row * rw;
+            volatile u32 *d = (volatile u32 *)(fb_vis32(vis, ry + row) + rx);
+
+            for (col = 0; col < rw; ++col) {
+                d[col] = s[col];
+            }
+        }
+    }
+
+    fb_base = fb_visible_page();
+    return true;
+}
+
 void fb_copy_front(u8 *dst)
 {
     u8 *src;

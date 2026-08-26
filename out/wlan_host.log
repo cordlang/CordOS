@@ -127,3 +127,6 @@
 [19:03:02] exit
 [19:19:13] start client pipe=cordos-wlan
 [19:19:13] connected to vbox
+[08:16:22] disconnected
+[08:20:12] start client pipe=cordos-wlan
+[08:20:12] connected to vbox
