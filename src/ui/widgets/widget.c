@@ -7,7 +7,8 @@
 #include "theme.h"
 
 #define UI_MAX 48u
-#define UI_HOVER_STEP 48u
+#define UI_HOVER_MS 110u
+#define UI_PRESS_MS 70u
 #define UI_IDLE 40u
 
 static const struct rgb W_GLASS = { 0x1C, 0x24, 0x30 };
@@ -17,6 +18,7 @@ static const struct rgb W_MUTED = { 0xC4, 0xC8, 0xD0 };
 struct ui_item {
     u32 id;
     u8 hover;
+    u8 press;
     u8 target;
     bool used;
     bool shown;
@@ -35,6 +37,8 @@ static bool s_want_full;
 static bool s_begun;
 static bool s_cursor_override;
 static enum cursor_kind s_cursor_kind;
+static u32 s_prev_ms;
+static u32 s_dt_ms;
 
 static u8 mix_u8(u8 a, u8 b, u8 t)
 {
@@ -62,6 +66,7 @@ static struct ui_item *item_get(u32 id)
     }
     s_items[s_n].id = id;
     s_items[s_n].hover = 0;
+    s_items[s_n].press = 0;
     s_items[s_n].target = 0;
     s_items[s_n].used = true;
     s_items[s_n].shown = false;
@@ -69,41 +74,63 @@ static struct ui_item *item_get(u32 id)
     return &s_items[s_n - 1u];
 }
 
-static u8 approach(u8 cur, u8 dest)
+static u8 approach_timed(u8 cur, u8 dest, u32 dur_ms)
 {
+    u32 step = s_dt_ms != 0u ? s_dt_ms : 16u;
+
+    if (dur_ms == 0u) {
+        dur_ms = 1u;
+    }
+    step = ((255u * step) + dur_ms - 1u) / dur_ms;
+    if (step == 0u) {
+        step = 1u;
+    }
+    if (step > 255u) {
+        step = 255u;
+    }
     if (cur < dest) {
         u8 d = (u8)(dest - cur);
-        return (u8)(cur + (d > UI_HOVER_STEP ? UI_HOVER_STEP : d));
+        return (u8)(cur + (d > step ? (u8)step : d));
     }
     if (cur > dest) {
         u8 d = (u8)(cur - dest);
-        return (u8)(cur - (d > UI_HOVER_STEP ? UI_HOVER_STEP : d));
+        return (u8)(cur - (d > step ? (u8)step : d));
     }
     return cur;
 }
 
-static void paint_glass(u32 x, u32 y, u32 w, u32 h, u8 focus)
+static void paint_glass(u32 x, u32 y, u32 w, u32 h, u8 focus, u8 press)
 {
     u8 glass_a = mix_u8(38u, 86u, focus);
     u8 rim_a = mix_u8(16u, 64u, focus);
-    u32 rad = h / 2u;
+    u32 inset = ((u32)press * 2u) / 255u;
+    u32 lift = ((u32)focus * 1u) / 255u;
+    u32 sink = ((u32)press * 2u) / 255u;
+    u32 px = x + inset;
+    u32 py = (y + sink >= lift + inset) ? (y + sink - lift - inset) : 0u;
+    u32 pw = (w > inset * 2u) ? (w - inset * 2u) : w;
+    u32 ph = (h > inset * 2u) ? (h - inset * 2u) : h;
+    u32 rad = ph / 2u;
     struct rgb rim = draw_region_is_light(x, y, w, h)
                          ? (struct rgb){ 0x1A, 0x1A, 0x1C }
                          : W_WHITE;
 
+    if (pw == 0u || ph == 0u) {
+        return;
+    }
     fb_compose_begin();
-    if (x > 0 && y > 0) {
-        draw_round_fill(x - 1u, y - 1u, w + 2u, h + 2u, (h + 2u) / 2u, rim,
+    if (px > 0 && py > 0) {
+        draw_round_fill(px - 1u, py - 1u, pw + 2u, ph + 2u, (ph + 2u) / 2u, rim,
                         rim_a);
     }
-    draw_glass(x, y, w, h, rad, W_GLASS, glass_a);
-    if (w > 24u) {
-        draw_round_fill(x + 12u, y + 1u, w - 24u, 1u, 0, W_WHITE,
+    draw_glass(px, py, pw, ph, rad, W_GLASS, glass_a);
+    if (pw > 24u) {
+        draw_round_fill(px + 12u, py + 1u, pw - 24u, 1u, 0, W_WHITE,
                         (u8)(12u + (u32)focus / 12u));
     }
 }
 
-static void paint_label(u32 x, u32 y, u32 w, u32 h, const char *label)
+static void paint_label(u32 x, u32 y, u32 w, u32 h, const char *label, u8 press)
 {
     u32 tw;
     u32 tx;
@@ -114,7 +141,8 @@ static void paint_label(u32 x, u32 y, u32 w, u32 h, const char *label)
     }
     tw = draw_text_width(label, 1);
     tx = x + (w > tw ? (w - tw) / 2u : 0);
-    ty = y + (h > FONT_HEIGHT ? (h - FONT_HEIGHT) / 2u : 0);
+    ty = y + (h > FONT_HEIGHT ? (h - FONT_HEIGHT) / 2u : 0) +
+         (((u32)press + 127u) / 255u);
     draw_text(tx, ty, label, W_WHITE, 1);
 }
 
@@ -139,26 +167,36 @@ static bool widget_click(bool hot, bool enabled)
 }
 
 static bool run_visual(struct ui_item *it, u32 x, u32 y, u32 w, u32 h,
-                       bool hot, bool selected)
+                       bool hot, bool selected, bool down)
 {
     u8 prev;
     u8 next;
+    u8 prev_press;
+    u8 next_press;
 
     it->target = selected ? 255u : (hot ? 255u : UI_IDLE);
     prev = it->hover;
-    next = approach(prev, it->target);
+    next = approach_timed(prev, it->target, UI_HOVER_MS);
     it->hover = next;
+    prev_press = it->press;
+    next_press = approach_timed(prev_press, down ? 255u : 0u, UI_PRESS_MS);
+    it->press = next_press;
     if (next != it->target) {
+        s_busy = true;
+    }
+    if (next_press != (down ? 255u : 0u)) {
         s_busy = true;
     }
     if (hot) {
         s_pointer = true;
     }
-    if (it->shown && prev == next && next == it->target && !s_want_full) {
+    if (it->shown && prev == next && prev_press == next_press &&
+        next == it->target && next_press == (down ? 255u : 0u) &&
+        !s_want_full) {
         return false;
     }
     it->shown = true;
-    paint_glass(x, y, w, h, next);
+    paint_glass(x, y, w, h, next, next_press);
     ui_comp_damage(x, y, w, h);
     return true;
 }
@@ -167,9 +205,21 @@ void ui_begin(i32 mx, i32 my, u8 buttons, u32 now_ms)
 {
     u32 i;
 
-    (void)now_ms;
     s_mx = mx;
     s_my = my;
+    if (!s_begun) {
+        s_dt_ms = 16u;
+    } else if (now_ms >= s_prev_ms) {
+        s_dt_ms = now_ms - s_prev_ms;
+        if (s_dt_ms < 8u) {
+            s_dt_ms = 8u;
+        } else if (s_dt_ms > 40u) {
+            s_dt_ms = 40u;
+        }
+    } else {
+        s_dt_ms = 16u;
+    }
+    s_prev_ms = now_ms;
     s_prev_buttons = s_begun ? s_buttons : buttons;
     s_buttons = buttons;
     s_click = false;
@@ -245,14 +295,15 @@ bool ui_button(u32 id, u32 x, u32 y, u32 w, u32 h, const char *label,
 {
     struct ui_item *it = item_get(id);
     bool hot = widget_hot(x, y, w, h, enabled);
+    bool down = hot && enabled && (s_buttons & MOUSE_LEFT) != 0;
     bool painted;
 
-    painted = run_visual(it, x, y, w, h, hot, selected);
+    painted = run_visual(it, x, y, w, h, hot, selected, down);
     if (!enabled) {
         it->target = UI_IDLE / 2u;
     }
     if (painted) {
-        paint_label(x, y, w, h, label);
+        paint_label(x, y, w, h, label, it->press);
     }
     return widget_click(hot, enabled);
 }
@@ -262,12 +313,13 @@ bool ui_pill(u32 id, u32 x, u32 y, u32 w, u32 h, const char *label,
 {
     struct ui_item *it = item_get(id);
     bool hot = widget_hot(x, y, w, h, true);
+    bool down = hot && (s_buttons & MOUSE_LEFT) != 0;
     bool painted;
 
-    painted = run_visual(it, x, y, w, h, hot, selected);
+    painted = run_visual(it, x, y, w, h, hot, selected, down);
     if (painted && label != NULL) {
-        draw_text_clip(x + 18u, y + 12u, x + (w > 52u ? w - 52u : w), label,
-                       W_WHITE, 1);
+        draw_text_clip(x + 18u, y + 12u + (((u32)it->press + 127u) / 255u),
+                       x + (w > 52u ? w - 52u : w), label, W_WHITE, 1);
     }
     return widget_click(hot, true);
 }
@@ -277,11 +329,12 @@ bool ui_field(u32 id, u32 x, u32 y, u32 w, u32 h, const char *text,
 {
     struct ui_item *it = item_get(id);
     bool hot = widget_hot(x, y, w, h, true);
+    bool down = hot && (s_buttons & MOUSE_LEFT) != 0;
     bool painted;
     bool has = text != NULL && text[0] != '\0';
     u32 ty = y + (h > 16u ? (h - 16u) / 2u : 0);
 
-    painted = run_visual(it, x, y, w, h, hot, focused);
+    painted = run_visual(it, x, y, w, h, hot, focused, down);
     if (painted) {
         if (has && password) {
             u32 n = 0;
@@ -322,8 +375,11 @@ bool ui_icon_btn(u32 id, u32 x, u32 y, u32 w, u32 h, enum ui_icon icon,
 {
     struct ui_item *it = item_get(id);
     bool hot = widget_hot(x, y, w, h, true);
+    bool down = hot && (s_buttons & MOUSE_LEFT) != 0;
     u8 prev;
     u8 next;
+    u8 prev_press;
+    u8 next_press;
     u32 ix;
     u32 iy;
     u32 isz = (h > 16u) ? (h - 16u) : h;
@@ -334,36 +390,49 @@ bool ui_icon_btn(u32 id, u32 x, u32 y, u32 w, u32 h, enum ui_icon icon,
     }
     it->target = (hot || accent) ? 255u : UI_IDLE;
     prev = it->hover;
-    next = approach(prev, it->target);
+    next = approach_timed(prev, it->target, UI_HOVER_MS);
     it->hover = next;
+    prev_press = it->press;
+    next_press = approach_timed(prev_press, down ? 255u : 0u, UI_PRESS_MS);
+    it->press = next_press;
     if (next != it->target) {
+        s_busy = true;
+    }
+    if (next_press != (down ? 255u : 0u)) {
         s_busy = true;
     }
     if (hot) {
         s_pointer = true;
     }
-    if (!it->shown || prev != next || s_want_full) {
+    if (!it->shown || prev != next || prev_press != next_press || s_want_full) {
         it->shown = true;
         u8 a = (u8)(20u + ((u32)next * 150u) / 255u);
+        i32 yoff = (i32)(((u32)next_press * 3u) / 255u) -
+                   (i32)(((u32)next * 4u) / 255u);
+        i32 bg_y = (i32)y + yoff;
+        i32 icon_y = (i32)(y + (h > isz ? (h - isz) / 2u : 0)) + yoff;
+        i32 dot_y = (i32)(y + h - 11u) + yoff;
         struct rgb rim = draw_region_is_light(x, y, w, h)
                              ? (struct rgb){ 0x1A, 0x1A, 0x1C }
                              : W_WHITE;
 
         fb_compose_begin();
         if (next > 8u) {
-            draw_round_fill(x + 5u, y + 7u, w > 10u ? w - 10u : w,
+            draw_round_fill(x + 5u, (u32)(bg_y + 7), w > 10u ? w - 10u : w,
                             h > 14u ? h - 14u : h, 15u, rim,
                             a > 24u ? (u8)(a - 24u) : 20u);
-            draw_round_fill(x + 6u, y + 8u, w > 12u ? w - 12u : w,
+            draw_round_fill(x + 6u, (u32)(bg_y + 8), w > 12u ? w - 12u : w,
                             h > 16u ? h - 16u : h, 14u, THEME_HOVER, a);
         }
         ix = x + (w > isz ? (w - isz) / 2u : 0);
-        iy = y + (h > isz ? (h - isz) / 2u : 0);
+        iy = (icon_y > 0) ? (u32)icon_y : 0u;
         col = (accent || next > 128u) ? THEME_ACCENT : THEME_FG;
         draw_icon(ix, iy, isz, icon, col);
         if (running) {
             u32 dot = x + (w > 6u ? (w - 6u) / 2u : 0);
-            draw_round_fill(dot, y + h - 11u, 6u, 6u, 3u, THEME_ACCENT, 255u);
+            draw_round_fill(dot, (dot_y > 0) ? (u32)dot_y : 0u,
+                            6u, 6u, 3u, THEME_ACCENT,
+                            255u);
         }
         ui_comp_damage(x, y, w, h);
     }

@@ -48,6 +48,8 @@ enum ob_step {
 #define ROW_GAP  ui_px(10u)
 #define BTN_H    ui_px(38u)
 #define LOGO     BRAND_LOGIN_W
+#define OB_ENTER_MS 240u
+#define OB_CHECK_STEP_MS 70u
 
 static const struct rgb OB_WHITE = { 0xF7, 0xF8, 0xFA };
 static const struct rgb OB_MUTED = { 0xC4, 0xC8, 0xD0 };
@@ -68,9 +70,11 @@ static u32 s_wplen;
 static bool s_scanned;
 static u32 s_wifi_top;
 static u8 s_enter;
+static u32 s_enter_anim_ms;
 static bool s_caret;
 static bool s_light;
 static u8 *s_fade_from;
+static u32 s_check_elapsed;
 
 static void wait_ms(u32 ms)
 {
@@ -817,6 +821,7 @@ static bool ob_run_widgets(enum ob_step *step, u32 *lang_focus, bool *field_on,
                 *step = OB_CHECK;
                 s_checking = true;
                 s_check_t = 0;
+                s_check_elapsed = 0;
                 s_net_ok = false;
             }
         } else if (*step == OB_CHECK && !s_checking) {
@@ -842,7 +847,8 @@ static bool ob_run_widgets(enum ob_step *step, u32 *lang_focus, bool *field_on,
 
 static void ob_enter(enum ob_step step, u32 hover, u32 lang_focus, bool field_on)
 {
-    s_enter = 255;
+    s_enter = 0;
+    s_enter_anim_ms = 0;
     cursor_hide();
     if (s_fade_from != NULL) {
         fb_copy_front(s_fade_from);
@@ -879,6 +885,7 @@ void onboarding_run(bool ask_lang)
     enum ob_step step;
     enum ob_step prev;
     u32 lang_focus = (i18n_lang() == LANG_EN) ? 1u : 0u;
+    u32 last_tick;
     bool field_on = true;
     bool dirty = true;
     i32 lx = -1;
@@ -897,11 +904,13 @@ void onboarding_run(bool ask_lang)
     s_net_ok = false;
     s_checking = false;
     s_check_t = 0;
+    s_check_elapsed = 0;
     s_wifi_pass[0] = '\0';
     s_wplen = 0;
     s_scanned = false;
     s_wifi_top = 0;
     s_enter = 255;
+    s_enter_anim_ms = OB_ENTER_MS;
     s_caret = true;
     s_fade_from = fb_compose_ready() ? fb_layer_alloc() : NULL;
     step = ask_lang ? OB_LANG : OB_WELCOME;
@@ -917,8 +926,16 @@ void onboarding_run(bool ask_lang)
     while (mouse_has_event()) {
         (void)mouse_get_event();
     }
+    last_tick = time_uptime_ms();
 
     for (;;) {
+        u32 now_ms = time_uptime_ms();
+        u32 dt_ms = now_ms - last_tick;
+
+        if (dt_ms > 40u) {
+            dt_ms = 40u;
+        }
+        last_tick = now_ms;
         hover = ob_hit(step, mouse_x(), mouse_y(), lang_focus);
         if (hover == HIT_NEXT || hover == HIT_SKIP || hover == HIT_BACK ||
             hover == HIT_FIELD || hover == HIT_LANG0 || hover == HIT_LANG1 ||
@@ -947,6 +964,21 @@ void onboarding_run(bool ask_lang)
             }
         }
 
+        if (s_enter < 255u) {
+            u32 next_anim = s_enter_anim_ms + dt_ms;
+            u8 next_enter;
+
+            if (next_anim > OB_ENTER_MS) {
+                next_anim = OB_ENTER_MS;
+            }
+            next_enter = (u8)((next_anim * 255u) / OB_ENTER_MS);
+            if (next_enter != s_enter) {
+                s_enter = next_enter;
+                dirty = true;
+            }
+            s_enter_anim_ms = next_anim;
+        }
+
         if (!first && step == prev && step == OB_WIFI && !s_scanned) {
             draw_step(step, hover, lang_focus, field_on, false);
             ui_invalidate();
@@ -964,12 +996,21 @@ void onboarding_run(bool ask_lang)
                 ui_invalidate();
                 s_net_ok = ob_probe_link();
             }
-            wait_ms(70u);
-            s_check_t++;
-            if (s_check_t >= 12u) {
+            s_check_elapsed += dt_ms;
+            if (s_check_elapsed >= OB_CHECK_STEP_MS) {
+                u32 next_t = s_check_elapsed / OB_CHECK_STEP_MS;
+
+                if (next_t > 12u) {
+                    next_t = 12u;
+                }
+                if (next_t != s_check_t) {
+                    s_check_t = (u8)next_t;
+                    dirty = true;
+                }
+            }
+            if (s_check_elapsed >= 12u * OB_CHECK_STEP_MS) {
                 s_checking = false;
             }
-            dirty = true;
         }
 
         if (keyboard_has_char()) {
@@ -1030,6 +1071,7 @@ void onboarding_run(bool ask_lang)
                         step = OB_CHECK;
                         s_checking = true;
                         s_check_t = 0;
+                        s_check_elapsed = 0;
                         s_net_ok = false;
                     }
                     dirty = true;
