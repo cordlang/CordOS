@@ -9,6 +9,9 @@ ssize_t vfs_write(int fd, const void *buf, size_t len);
 int vfs_create(const char *path);
 int vfs_close(int fd);
 
+/* Close FDs opened by pid. pid 0 (idle/kernel) is ignored. */
+void vfs_close_task(u32 pid);
+
 /* Print directory entries (basenames). Returns 0 or -1. */
 int vfs_ls(const char *path);
 

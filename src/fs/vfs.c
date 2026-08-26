@@ -7,6 +7,7 @@
 #include "persist.h"
 #include "serial.h"
 #include "string.h"
+#include "task.h"
 #include "vga.h"
 
 #define VFS_MAX_FD   8
@@ -16,6 +17,7 @@
 struct vfs_file {
     int used;
     int src;
+    u32 owner_pid;
     u32 data_off;
     u32 size;
     u32 pos;
@@ -163,6 +165,9 @@ int vfs_open(const char *path)
         if (!s_fds[fd].used) {
             s_fds[fd].used = 1;
             s_fds[fd].src = src;
+            s_fds[fd].owner_pid = current_task_os != NULL
+                ? current_task_os->pid
+                : 0;
             s_fds[fd].data_off = off;
             s_fds[fd].size = size;
             s_fds[fd].pos = 0;
@@ -271,7 +276,24 @@ int vfs_close(int fd)
         return -1;
     }
     s_fds[fd].used = 0;
+    s_fds[fd].owner_pid = 0;
     return 0;
+}
+
+void vfs_close_task(u32 pid)
+{
+    int fd;
+
+    /* Idle / kernel (pid 0) shares the global table with the desktop. */
+    if (pid == 0) {
+        return;
+    }
+    for (fd = 0; fd < VFS_MAX_FD; ++fd) {
+        if (s_fds[fd].used && s_fds[fd].owner_pid == pid) {
+            s_fds[fd].used = 0;
+            s_fds[fd].owner_pid = 0;
+        }
+    }
 }
 
 static int seen_has(struct list_ctx *ctx, const char *name)

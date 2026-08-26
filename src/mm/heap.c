@@ -5,6 +5,9 @@
 #include "vga.h"
 #include "panic.h"
 #include "serial.h"
+#ifdef __x86_64__
+#include "spinlock.h"
+#endif
 
 #define HEAP_MAGIC 0x48454150u
 #define HEAP_ALIGN 8u
@@ -35,6 +38,14 @@ volatile u32 heap_free_os = 0;
 
 static struct heap_block *heap_head;
 static u32 heap_pages_os;
+#ifdef __x86_64__
+static spinlock_t heap_lock;
+#define HEAP_LOCK()   spin_lock(&heap_lock)
+#define HEAP_UNLOCK() spin_unlock(&heap_lock)
+#else
+#define HEAP_LOCK()   ((void)0)
+#define HEAP_UNLOCK() ((void)0)
+#endif
 
 static size_t align_up(size_t value, size_t alignment)
 {
@@ -159,6 +170,10 @@ void heap_init(void)
     size_t bytes = HEAP_INITIAL_PAGES * PAGE_SIZE;
 
 #ifdef __x86_64__
+    spinlock_init(&heap_lock);
+#endif
+
+#ifdef __x86_64__
     u64 phys = pmm_alloc_contiguous(HEAP_INITIAL_PAGES);
 
     if (phys == 0) {
@@ -227,6 +242,7 @@ void *kmalloc(size_t size)
         return NULL;
     }
 
+    HEAP_LOCK();
     size = align_up(size, HEAP_ALIGN);
     p = heap_try_alloc(size);
 #ifdef __x86_64__
@@ -234,6 +250,7 @@ void *kmalloc(size_t size)
         p = heap_try_alloc(size);
     }
 #endif
+    HEAP_UNLOCK();
     return p;
 }
 
@@ -245,12 +262,15 @@ void kfree(void *ptr)
         return;
     }
 
+    HEAP_LOCK();
     block = ((struct heap_block *)ptr) - 1;
     if (block->magic != HEAP_MAGIC) {
+        HEAP_UNLOCK();
         panic("heap: magic corrupto en kfree");
     }
 
     if (block->free) {
+        HEAP_UNLOCK();
         panic("heap: double free");
     }
 
@@ -258,6 +278,7 @@ void kfree(void *ptr)
     heap_used_os -= block->size;
     heap_free_os += block->size;
     heap_coalesce();
+    HEAP_UNLOCK();
 }
 
 void heap_print_stats(void)

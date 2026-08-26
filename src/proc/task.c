@@ -6,6 +6,7 @@
 #include "panic.h"
 #include "isr.h"
 #include "user.h"
+#include "vfs.h"
 
 struct task task_table_os[TASK_MAX_OS];
 struct task *current_task_os = NULL;
@@ -119,6 +120,13 @@ u32 task_create(void (*entry)(void), const char *name)
         return 0;
     }
 
+    /* Reusing a DEAD slot whose stack was not reaped yet. */
+    if (task->kstack_base != NULL) {
+        kfree(task->kstack_base);
+        task->kstack_base = NULL;
+        task->kstack_top = NULL;
+    }
+
     task->pid = next_pid_os++;
     task->name = name ? name : "?";
     task_entries_os[i] = entry;
@@ -143,14 +151,19 @@ void task_yield(void)
 
 void task_exit(void)
 {
+    u32 pid;
+
     interrupts_disable();
     if (current_task_os != NULL) {
+        pid = current_task_os->pid;
         current_task_os->state = TASK_DEAD;
         if (tasks_ready_os > 0) {
             tasks_ready_os--;
         }
+        if (pid != 0) {
+            vfs_close_task(pid);
+        }
     }
-    interrupts_enable();
     schedule();
     panic("task_exit: no runnable task");
 }

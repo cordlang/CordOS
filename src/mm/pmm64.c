@@ -56,20 +56,55 @@ static bool pmm_is_used(u32 frame)
     return (frame_bitmap[frame / 8u] & (1u << (frame % 8u))) != 0;
 }
 
+/* Reject wrap: base + length - 1 must stay inside the 64-bit space. */
+static int pmm_region_frames(u64 base, u64 length, int inward,
+                             u64 *start_out, u64 *end_out)
+{
+    u64 last;
+    u64 start;
+    u64 end;
+
+    *start_out = 0;
+    *end_out = 0;
+    if (length == 0) {
+        return -1;
+    }
+    if (base > (~0ull - (length - 1ull))) {
+        return -1;
+    }
+    last = base + length - 1ull;
+
+    if (inward) {
+        start = (base + (u64)PAGE_SIZE - 1ull) / PAGE_SIZE;
+        end = (base + length) / PAGE_SIZE;
+        if (end <= start) {
+            return -1;
+        }
+    } else {
+        start = base / PAGE_SIZE;
+        end = last / PAGE_SIZE + 1ull;
+    }
+    if (start >= (u64)bitmap_frames) {
+        return -1;
+    }
+    if (end > (u64)bitmap_frames) {
+        end = (u64)bitmap_frames;
+    }
+    *start_out = start;
+    *end_out = end;
+    return 0;
+}
+
 static void pmm_mark_region_used(u64 base, u64 length)
 {
     u64 start;
     u64 end;
     u64 frame;
 
-    if (length == 0) {
+    if (pmm_region_frames(base, length, 0, &start, &end) < 0) {
         return;
     }
-
-    start = base / PAGE_SIZE;
-    end = (base + length + PAGE_SIZE - 1u) / PAGE_SIZE;
-
-    for (frame = start; frame < end && frame < bitmap_frames; ++frame) {
+    for (frame = start; frame < end; frame++) {
         pmm_set_used((u32)frame);
     }
 }
@@ -80,17 +115,10 @@ static void pmm_mark_region_free(u64 base, u64 length)
     u64 end;
     u64 frame;
 
-    if (length < PAGE_SIZE) {
+    if (pmm_region_frames(base, length, 1, &start, &end) < 0) {
         return;
     }
-
-    start = (base + PAGE_SIZE - 1u) / PAGE_SIZE;
-    end = (base + length) / PAGE_SIZE;
-    if (end <= start) {
-        return;
-    }
-
-    for (frame = start; frame < end && frame < bitmap_frames; ++frame) {
+    for (frame = start; frame < end; frame++) {
         pmm_set_free((u32)frame);
     }
 }

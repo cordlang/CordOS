@@ -7,6 +7,8 @@
 #include "task.h"
 #include "vfs.h"
 #include "string.h"
+#include "pmm.h"
+#include "vmm.h"
 
 extern void syscall_entry(void);
 
@@ -34,8 +36,22 @@ static char sys_read_pending[4];
 static u32 sys_read_pending_length;
 static u32 sys_read_pending_position;
 
+static u64 user_mapped_end(void)
+{
+    u64 ram = (u64)total_frames_os * (u64)PAGE_SIZE;
+
+    if (ram == 0 || ram > USER_IDENTITY_END) {
+        return USER_IDENTITY_END;
+    }
+    return ram;
+}
+
 static int user_range_ok(u64 addr, u64 len)
 {
+    u64 mapped;
+    u64 end;
+    u64 page;
+
     if (addr == 0) {
         return 0;
     }
@@ -43,11 +59,20 @@ static int user_range_ok(u64 addr, u64 len)
     if ((addr & (1ull << 63)) != 0) {
         return 0;
     }
-    if (addr >= USER_IDENTITY_END) {
+    mapped = user_mapped_end();
+    if (addr >= mapped) {
         return 0;
     }
-    if (len > USER_IDENTITY_END - addr) {
+    if (len > mapped - addr) {
         return 0;
+    }
+    end = addr + len;
+    page = addr & ~((u64)PAGE_SIZE - 1ull);
+    while (page < end) {
+        if (!vmm_page_mapped(page)) {
+            return 0;
+        }
+        page += PAGE_SIZE;
     }
     return 1;
 }
@@ -79,13 +104,16 @@ static int copy_to_user(u64 dst, const void *src, u64 len)
 static int copy_user_path(char *dst, u64 src, u64 max)
 {
     u64 i;
+    u64 limit;
 
-    if (max == 0) {
+    if (dst == NULL || max == 0) {
         return -1;
     }
-
-    for (i = 0; i < max; i++) {
+    dst[0] = '\0';
+    limit = max - 1u;
+    for (i = 0; i < limit; i++) {
         if (!user_range_ok(src + i, 1)) {
+            dst[0] = '\0';
             return -1;
         }
         dst[i] = ((const char *)src)[i];
@@ -93,6 +121,7 @@ static int copy_user_path(char *dst, u64 src, u64 max)
             return 0;
         }
     }
+    dst[limit] = '\0';
     return -1;
 }
 

@@ -1,6 +1,8 @@
 #include "page_fault.h"
 #include "vga.h"
 #include "panic.h"
+#include "serial.h"
+#include "task.h"
 
 #ifdef __x86_64__
 static void print_u64_hex(u64 value)
@@ -58,5 +60,16 @@ void page_fault_handler(struct interrupt_frame *frame)
     }
 
     vga_print("\n");
+
+    /*
+     * No COW / demand paging. A CPL3 fault kills the task; a kernel fault
+     * is still fatal (kernel bug or a user pointer we failed to reject).
+     */
+    if ((frame->err_code & 0x4) != 0 &&
+        current_task_os != NULL &&
+        current_task_os->pid != 0) {
+        serial_write("page_fault: user — kill task\n");
+        task_exit();
+    }
     panic("page fault no recuperable");
 }

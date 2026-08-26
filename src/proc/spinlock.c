@@ -39,7 +39,7 @@ void spin_lock(spinlock_t *lock)
      * re-enter the same lock. On SMP, pause avoids bus hammering; short
      * critical sections keep this acceptable until proper per-CPU irqsave.
      */
-    while (__sync_lock_test_and_set(&lock->locked, 1)) {
+    while (__atomic_exchange_n(&lock->locked, 1u, __ATOMIC_ACQUIRE)) {
         __asm__ volatile("pause");
     }
 
@@ -51,6 +51,6 @@ void spin_unlock(spinlock_t *lock)
     u64 flags = lock->irq_flags;
 
     lock->irq_flags = 0;
-    __sync_lock_release(&lock->locked);
+    __atomic_store_n(&lock->locked, 0u, __ATOMIC_RELEASE);
     irq_restore(flags);
 }

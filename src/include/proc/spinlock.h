@@ -4,7 +4,7 @@
 #include "types.h"
 
 /*
- * UP-safe (CLI while held) and SMP-ready (atomic TAS + pause).
+ * UP-safe (CLI while held) and SMP-ready (atomic acquire/release).
  * irq_flags is only valid while the lock is held by one CPU.
  */
 typedef struct spinlock {

@@ -2,6 +2,7 @@
 #include "task.h"
 #include "gdt.h"
 #include "isr.h"
+#include "heap.h"
 
 static void tss_load_task_rsp0(struct task *task)
 {
@@ -25,7 +26,7 @@ extern struct task task_table_os[TASK_MAX_OS];
 
 void sched_clear_lock(void)
 {
-    sched_lock_os = 0;
+    __sync_lock_release(&sched_lock_os);
 }
 
 void sched_init(void)
@@ -80,19 +81,23 @@ void schedule(void)
 {
     struct task *prev;
     struct task *next;
+    void *reap;
 
-    if (!sched_enabled_os || sched_lock_os) {
+    if (!sched_enabled_os) {
+        return;
+    }
+    /* Atomic TAS: check-then-set of sched_lock_os raced on SMP. */
+    if (__sync_lock_test_and_set(&sched_lock_os, 1)) {
         return;
     }
     if (current_task_os == NULL) {
+        __sync_lock_release(&sched_lock_os);
         return;
     }
 
-    sched_lock_os = 1;
-
     next = sched_pick_next();
     if (next == NULL || next == current_task_os) {
-        sched_lock_os = 0;
+        __sync_lock_release(&sched_lock_os);
         return;
     }
 
@@ -107,10 +112,24 @@ void schedule(void)
 
     switch_context(&prev->kstack_top, next->kstack_top);
 
+    /*
+     * Running on next's stack now — safe to free prev if it exited.
+     * Idle (slot 0) has kstack_base == NULL and is never TASK_DEAD.
+     */
+    reap = NULL;
+    if (prev->state == TASK_DEAD && prev->kstack_base != NULL) {
+        reap = prev->kstack_base;
+        prev->kstack_base = NULL;
+        prev->kstack_top = NULL;
+    }
+
     /* Resumed task continues here — always re-enable IRQs (preempt from IRQ0
      * can leave IF=0 until a full iret; that froze the keyboard). */
-    sched_lock_os = 0;
+    __sync_lock_release(&sched_lock_os);
     interrupts_enable();
+    if (reap != NULL) {
+        kfree(reap);
+    }
 }
 
 void scheduler_on_tick(void)

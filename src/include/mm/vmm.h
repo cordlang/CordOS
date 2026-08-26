@@ -17,6 +17,7 @@ void vmm_init(void);
 void vmm_map_page(u64 virtual_addr, u64 physical_addr, u32 flags);
 void vmm_unmap_page(u64 virtual_addr);
 u64 vmm_get_physical(u64 virtual_addr);
+int vmm_page_mapped(u64 virtual_addr);
 #else
 extern volatile u32 page_directory_os;
 

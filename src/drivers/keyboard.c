@@ -42,7 +42,8 @@ static void kbd_push(u32 codepoint)
     u32 next = (kbd_head + 1) % KBD_BUFFER_SIZE;
 
     if (next == kbd_tail) {
-        return;
+        /* Full: drop oldest so recent input is not silently lost. */
+        kbd_tail = (kbd_tail + 1) % KBD_BUFFER_SIZE;
     }
 
     kbd_buffer[kbd_head] = codepoint;
