@@ -86,6 +86,8 @@ void task_init(void)
         task_table_os[i].kstack_top = NULL;
         task_table_os[i].kstack_base = NULL;
         task_table_os[i].name = NULL;
+        task_table_os[i].user_rip = 0;
+        task_table_os[i].user_rsp = 0;
         task_entries_os[i] = NULL;
     }
 
@@ -95,12 +97,14 @@ void task_init(void)
     task_table_os[0].kstack_top = NULL;
     task_table_os[0].kstack_base = NULL;
     task_table_os[0].name = "idle";
+    task_table_os[0].user_rip = 0;
+    task_table_os[0].user_rsp = 0;
     current_task_os = &task_table_os[0];
     tasks_ready_os = 1;
     next_pid_os = 1;
 }
 
-u32 task_create(void (*entry)(void), const char *name)
+u32 task_create_user(void (*entry)(void), const char *name, u64 rip, u64 rsp)
 {
     u32 i;
     struct task *task;
@@ -126,6 +130,8 @@ u32 task_create(void (*entry)(void), const char *name)
         task->kstack_base = NULL;
         task->kstack_top = NULL;
     }
+    task->user_rip = 0;
+    task->user_rsp = 0;
 
     {
         u32 tries;
@@ -159,6 +165,8 @@ u32 task_create(void (*entry)(void), const char *name)
         task->pid = pid;
     }
     task->name = name ? name : "?";
+    task->user_rip = rip;
+    task->user_rsp = rsp;
     task_entries_os[i] = entry;
     setup_stack(task);
     task->state = TASK_READY;
@@ -166,6 +174,11 @@ u32 task_create(void (*entry)(void), const char *name)
     sched_add_ready(task);
 
     return task->pid;
+}
+
+u32 task_create(void (*entry)(void), const char *name)
+{
+    return task_create_user(entry, name, 0, 0);
 }
 
 /* Strong exports: override __attribute__((weak)) stubs in syscall.c (F5). */

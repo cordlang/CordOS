@@ -22,4 +22,12 @@
 void user_enter(u64 rip, u64 rsp);
 void user_smoke(void);
 
+/* Load ELF64 ET_EXEC and create a ring-3 task. path NULL/empty/"hello"
+ * uses the embedded user_hello.elf blob. Returns pid, or 0 on failure. */
+u32 user_spawn_path(const char *path);
+u32 user_spawn_elf(const void *blob, u32 size, const char *name);
+
+/* Load into the shared user window (for SYS_EXEC). 0 or -1. */
+int user_exec_path(const char *path, u64 *entry_out, u64 *stack_out);
+
 #endif

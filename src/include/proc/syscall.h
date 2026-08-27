@@ -12,6 +12,8 @@
 #define SYS_MMAP   5
 #define SYS_OPEN   6
 #define SYS_CLOSE  7
+#define SYS_SPAWN  8
+#define SYS_EXEC   9
 
 #define PROT_READ  1ull
 #define PROT_WRITE 2ull

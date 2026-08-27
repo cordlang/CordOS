@@ -9,6 +9,8 @@
 .global nos_mmap
 .global nos_open
 .global nos_close
+.global nos_spawn
+.global nos_exec
 
 nos_exit:
     mov $0, %rax
@@ -47,5 +49,15 @@ nos_open:
 
 nos_close:
     mov $7, %rax
+    int $0x80
+    ret
+
+nos_spawn:
+    mov $8, %rax
+    int $0x80
+    ret
+
+nos_exec:
+    mov $9, %rax
     int $0x80
     ret

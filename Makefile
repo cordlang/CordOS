@@ -245,9 +245,10 @@ KERNEL64_OBJS := \
 
 all: dist/cordos.iso
 
-# Syscall numbers 0–7 (docs/abi.md):
+# Syscall numbers 0–9 (docs/abi.md):
 #   SYS_EXIT=0 SYS_WRITE=1 SYS_READ=2 SYS_YIELD=3
 #   SYS_GETPID=4 SYS_MMAP=5 SYS_OPEN=6 SYS_CLOSE=7
+#   SYS_SPAWN=8 SYS_EXEC=9
 build:
 	mkdir -p out out/isoroot/boot/grub out/user
 

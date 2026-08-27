@@ -11,14 +11,20 @@
 #include "vmm.h"
 #include "user.h"
 #include "serial.h"
+#include "heap.h"
 
 extern void syscall_entry(void);
 
 #define SYS_COPY_MAX 256u
 #define SYS_PATH_MAX 256u
+#define SYS_VFS_IO_MAX (64u * 1024u)
 #define SYS_USER_COPY_MAX (16ull * 1024ull * 1024ull)
 
 static u64 mmap_bump_os = USER_MMAP_BASE;
+static struct interrupt_frame *s_sys_frame;
+static int s_exec_armed;
+static u64 s_exec_rip;
+static u64 s_exec_rsp;
 
 /* Soft deps on F4 — strong symbols override when task.o is linked. */
 __attribute__((weak)) void task_yield(void)
@@ -149,11 +155,9 @@ static i64 sys_write(u64 fd, u64 buf_u, u64 len)
 {
     char kbuf[SYS_COPY_MAX];
     u64 done;
+    u8 *kheap;
+    ssize_t n;
 
-    if (fd != 1) {
-        /* vfs_write is Phase 6; extra fds are not writable here. */
-        return -1;
-    }
     if (len == 0) {
         return 0;
     }
@@ -161,22 +165,38 @@ static i64 sys_write(u64 fd, u64 buf_u, u64 len)
         return -1;
     }
 
-    done = 0;
-    while (done < len) {
-        u64 chunk = len - done;
+    if (fd == 1) {
+        done = 0;
+        while (done < len) {
+            u64 chunk = len - done;
 
-        if (chunk > SYS_COPY_MAX) {
-            chunk = SYS_COPY_MAX;
+            if (chunk > SYS_COPY_MAX) {
+                chunk = SYS_COPY_MAX;
+            }
+            if (copy_from_user(kbuf, buf_u + done, chunk) < 0) {
+                return -1;
+            }
+            vga_write_utf8(kbuf, (size_t)chunk);
+            serial_write_n(kbuf, (size_t)chunk);
+            done += chunk;
         }
-        if (copy_from_user(kbuf, buf_u + done, chunk) < 0) {
-            return -1;
-        }
-        vga_write_utf8(kbuf, (size_t)chunk);
-        serial_write_n(kbuf, (size_t)chunk);
-        done += chunk;
+        return (i64)len;
     }
 
-    return (i64)len;
+    if (fd < 2 || fd > (u64)0x7FFFFFFFu || len > SYS_VFS_IO_MAX) {
+        return -1;
+    }
+    kheap = (u8 *)kmalloc((size_t)len);
+    if (kheap == NULL) {
+        return -1;
+    }
+    if (copy_from_user(kheap, buf_u, len) < 0) {
+        kfree(kheap);
+        return -1;
+    }
+    n = vfs_write((int)fd, kheap, (size_t)len);
+    kfree(kheap);
+    return n;
 }
 
 static char sys_read_one(void)
@@ -204,10 +224,8 @@ static i64 sys_read(u64 fd, u64 buf_u, u64 len)
 {
     char kbuf[SYS_COPY_MAX];
     u64 done;
+    ssize_t n;
 
-    if (fd != 0) {
-        return -1;
-    }
     if (len == 0) {
         return 0;
     }
@@ -215,23 +233,52 @@ static i64 sys_read(u64 fd, u64 buf_u, u64 len)
         return -1;
     }
 
+    if (fd == 0) {
+        done = 0;
+        while (done < len) {
+            u64 chunk = len - done;
+            u64 i;
+
+            if (chunk > SYS_COPY_MAX) {
+                chunk = SYS_COPY_MAX;
+            }
+            for (i = 0; i < chunk; i++) {
+                kbuf[i] = sys_read_one();
+            }
+            if (copy_to_user(buf_u + done, kbuf, chunk) < 0) {
+                return -1;
+            }
+            done += chunk;
+        }
+        return (i64)done;
+    }
+
+    if (fd < 2 || fd > (u64)0x7FFFFFFFu) {
+        return -1;
+    }
+
     done = 0;
     while (done < len) {
         u64 chunk = len - done;
-        u64 i;
 
         if (chunk > SYS_COPY_MAX) {
             chunk = SYS_COPY_MAX;
         }
-        for (i = 0; i < chunk; i++) {
-            kbuf[i] = sys_read_one();
+        n = vfs_read((int)fd, kbuf, (size_t)chunk);
+        if (n < 0) {
+            return done > 0 ? (i64)done : -1;
         }
-        if (copy_to_user(buf_u + done, kbuf, chunk) < 0) {
+        if (n == 0) {
+            break;
+        }
+        if (copy_to_user(buf_u + done, kbuf, (u64)n) < 0) {
             return -1;
         }
-        done += chunk;
+        done += (u64)n;
+        if ((u64)n < chunk) {
+            break;
+        }
     }
-
     return (i64)done;
 }
 
@@ -310,10 +357,57 @@ static i64 sys_open(u64 path_u)
 
 static i64 sys_close(u64 fd)
 {
-    if (fd > (u64)0x7FFFFFFFu) {
+    if (fd < 2 || fd > (u64)0x7FFFFFFFu) {
         return -1;
     }
     return (i64)vfs_close((int)fd);
+}
+
+static i64 sys_spawn(u64 path_u)
+{
+    char kpath[SYS_PATH_MAX];
+    u32 pid;
+
+    if (path_u == 0) {
+        pid = user_spawn_path(NULL);
+    } else {
+        if (copy_user_path(kpath, path_u, SYS_PATH_MAX) < 0) {
+            return -1;
+        }
+        pid = user_spawn_path(kpath);
+    }
+    return pid == 0 ? (i64)-1 : (i64)pid;
+}
+
+static i64 sys_exec(u64 path_u)
+{
+    char kpath[SYS_PATH_MAX];
+    const char *path;
+    u64 entry;
+    u64 stack;
+
+    /* Only the int 0x80 path can retake the user frame. */
+    if (s_sys_frame == NULL) {
+        return -1;
+    }
+
+    if (path_u == 0) {
+        path = NULL;
+    } else {
+        if (copy_user_path(kpath, path_u, SYS_PATH_MAX) < 0) {
+            return -1;
+        }
+        path = kpath;
+    }
+
+    if (user_exec_path(path, &entry, &stack) != 0) {
+        return -1;
+    }
+
+    s_exec_armed = 1;
+    s_exec_rip = entry;
+    s_exec_rsp = stack;
+    return 0;
 }
 
 i64 syscall_dispatch(u64 num, u64 a0, u64 a1, u64 a2)
@@ -335,6 +429,10 @@ i64 syscall_dispatch(u64 num, u64 a0, u64 a1, u64 a2)
         return sys_open(a0);
     case SYS_CLOSE:
         return sys_close(a0);
+    case SYS_SPAWN:
+        return sys_spawn(a0);
+    case SYS_EXEC:
+        return sys_exec(a0);
     default:
         return -1;
     }
@@ -344,7 +442,23 @@ void syscall_interrupt(struct interrupt_frame *frame)
 {
     i64 result;
 
+    s_sys_frame = frame;
+    s_exec_armed = 0;
     result = syscall_dispatch(frame->rax, frame->rdi, frame->rsi, frame->rdx);
+    s_sys_frame = NULL;
+    if (s_exec_armed) {
+        s_exec_armed = 0;
+        frame->rip = s_exec_rip;
+        frame->rsp = s_exec_rsp;
+        frame->cs = GDT_USER_CODE;
+        frame->ss = GDT_USER_DATA;
+        frame->rflags = 0x202;
+        frame->rax = 0;
+        frame->rdi = 0;
+        frame->rsi = 0;
+        frame->rdx = 0;
+        return;
+    }
     frame->rax = (u64)result;
 }
 

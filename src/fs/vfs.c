@@ -13,6 +13,7 @@
 #define VFS_MAX_FD   8
 #define VFS_SRC_RAM  0
 #define VFS_SRC_DISK 1
+/* ABI console: fd 0 keyboard, fd 1 VGA. vfs_open allocates from 2. */
 
 struct vfs_file {
     int used;
@@ -195,7 +196,8 @@ int vfs_open(const char *path)
         return -1;
     }
 
-    for (fd = 0; fd < VFS_MAX_FD; ++fd) {
+    /* ABI console occupies 0 and 1; SYS_OPEN must not collide. */
+    for (fd = 2; fd < VFS_MAX_FD; ++fd) {
         if (!s_fds[fd].used) {
             s_fds[fd].used = 1;
             s_fds[fd].src = src;
@@ -210,6 +212,21 @@ int vfs_open(const char *path)
         }
     }
     return -1;
+}
+
+int vfs_size(int fd, u32 *out)
+{
+    struct vfs_file *f;
+
+    if (!s_ready || fd < 2 || fd >= VFS_MAX_FD || out == NULL) {
+        return -1;
+    }
+    f = &s_fds[fd];
+    if (!f->used || !vfs_owned(f)) {
+        return -1;
+    }
+    *out = f->size;
+    return 0;
 }
 
 int vfs_create(const char *path)

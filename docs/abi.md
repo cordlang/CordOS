@@ -38,9 +38,10 @@ bad pointer / unknown number. There is no errno object.
 ## User pointer validation
 
 Handlers never operate on a user pointer in place. `write` / `read` / `mmap`
-buffers and `open` paths are range-checked, then copied through a kernel bounce
-buffer (`SYS_COPY_MAX` = 256 bytes per chunk; paths capped at `SYS_PATH_MAX` =
-256 including NUL).
+buffers and `open` / `spawn` / `exec` paths are range-checked, then copied
+through a kernel bounce buffer (`SYS_COPY_MAX` = 256 bytes per chunk; VFS
+`write` copies the whole buffer up to `SYS_VFS_IO_MAX` = 64 KiB; paths capped
+at `SYS_PATH_MAX` = 256 including NUL).
 
 A pointer range `[addr, addr+len)` is accepted only if **all** of:
 
@@ -55,32 +56,33 @@ User images live at `0x40000000` (see `user/hello.ld`). `mmap` anonymous
 mappings start at `0x41000000`. Kernel `.rodata` is no longer a valid
 `syscall_dispatch` buffer.
 
-## Numbers 0–7
+## Numbers 0–9
 
 | # | Name | Prototype | Notes |
 |---|------|-----------|--------|
 | 0 | `exit` | `exit(code)` — `rdi` = code | If `task_current()` is non-NULL, `task_exit()` (TASK_DEAD + schedule). Else halt (`cli; hlt`). |
-| 1 | `write` | `write(fd, buf, len)` | `fd=1` → VGA UTF-8 **and** serial. Other fds → `-1`. Bad pointer → `-1`. |
-| 2 | `read` | `read(fd, buf, len)` | `fd=0` → keyboard UTF-8, blocking `hlt`. Else `-1`. Bad pointer → `-1`. |
+| 1 | `write` | `write(fd, buf, len)` | `fd=1` → VGA UTF-8 **and** serial. `fd>=2` → `vfs_write` (whole-file replace at pos 0, max 64 KiB). Else `-1`. Bad pointer → `-1`. |
+| 2 | `read` | `read(fd, buf, len)` | `fd=0` → keyboard UTF-8, blocking `hlt`. `fd>=2` → `vfs_read` (short read / EOF OK). Else `-1`. Bad pointer → `-1`. |
 | 3 | `yield` | `yield()` | `task_yield()` (weak no-op if F4 not linked) |
 | 4 | `getpid` | `getpid()` | `task_current()->pid` or `0` |
 | 5 | `mmap` | `mmap(hint, len, prot)` | Anonymous user pages. `PROT_WRITE` → `PAGE_WRITE`; without it the leaf is read-only. `PROT_WRITE|PROT_EXEC` is `-1` (W^X). `hint=0` bump-allocates from `0x41000000`. `len` rounded to 4 KiB, max 16 MiB. Returns VA or `-1`. NX (EFER.NXE) still open. |
-| 6 | `open` | `open(path)` | Copies a NUL-terminated path, then `vfs_open`. `-1` if bad pointer, unterminated path, missing file, or vfs not mounted. |
-| 7 | `close` | `close(fd)` | `vfs_close(fd)`. `-1` if not mounted / bad fd. |
+| 6 | `open` | `open(path)` | Copies a NUL-terminated path, then `vfs_open`. Returns a vfs fd **≥ 2**. `-1` if bad pointer, unterminated path, missing file, or vfs not mounted. |
+| 7 | `close` | `close(fd)` | `vfs_close(fd)` for `fd>=2`. `-1` for console fds 0/1, not mounted, or bad fd. |
+| 8 | `spawn` | `spawn(path)` | Load ELF64 `ET_EXEC` x86_64 via `elf64_load`, create a task, `iretq` into it. `path=NULL` / empty / `"hello"` (optional leading `/`) uses the embedded `user_hello.elf` blob. Else the file is read from VFS. Returns **pid** or `-1`. Shared user window (`0x40000000`): a second live ring-3 image is `-1` (`spawn: user window busy`). |
+| 9 | `exec` | `exec(path)` | Same loader as `spawn`, but replaces the **current** task: `int 0x80` returns into the new `RIP`/`RSP` (CS/SS = user). Kernel `syscall_dispatch` (no interrupt frame) returns `-1`. Path convention matches `spawn`. |
 
-Console fds `0` (keyboard) and `1` (VGA) are not the vfs table. `SYS_OPEN`
-returns a raw vfs fd (`0`–7); `SYS_READ`/`SYS_WRITE` do not multiplex those
+Console fds `0` (keyboard) and `1` (VGA/serial) are not the vfs table.
+`SYS_OPEN` allocates from fd `2` so those numbers never collide. A CPL3 page
+fault still kills only that task (`page_fault.c`); there is no per-process CR3
 yet.
 
 ## Limits (this is the ABI as implemented)
 
 Canonical open work: [`ROADMAP.md`](ROADMAP.md). Do not read this table as
-“mmap / userland done”.
+“userland / mmap done”.
 
-- No `spawn`/`exec` (syscall 8+). The smoke ELF is launched by the kernel.
-- `mmap` `prot` is ignored: pages are left writable. That is Fase 17 (W^X),
-  not a finished mmap.
-- `read`/`write` do not use the fds returned by `open`/`close`.
+- `spawn`/`exec` exist (8/9). One live ring-3 image at `0x40000000`; no per-process CR3. Dock Terminal is still ring 0.
+- `mmap` leaf `prot` is honored (RO vs W; W+X is `-1`). NX (EFER.NXE) and ELF `PT_LOAD` flags are still open (Fase 17).
 - Login password hashing is not part of this ABI. It is FNV-1a + pepper
   (`src/fs/userdb.c`), not a KDF — before “usuarios reales”.
 

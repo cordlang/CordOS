@@ -8,9 +8,9 @@ al árbol (`src/kernel/`, `src/proc/`, …).
 
 Notas honestas (agosto 2026), sin inventar ABI:
 
-- `mmap` no es stub: bump anónimo `PAGE_USER`, siempre writable. **`prot` se ignora.**
-- `read`/`write` no multiplexan fds VFS (0 = teclado, 1 = VGA). `open`/`close` sí hablan con VFS.
-- No hay `spawn`/`exec`. El ELF de smoke lo lanza el kernel.
+- `mmap` es bump anónimo `PAGE_USER`. `PROT_WRITE` marca la hoja W; `PROT_WRITE|PROT_EXEC` es `-1`. NX (EFER.NXE) sigue abierto.
+- `read`/`write`: fd 0 teclado, fd 1 VGA+serial, fd ≥ 2 → VFS. `open` reserva desde 2.
+- `spawn`/`exec` (8/9) cargan ELF64. Un solo image window (`0x40000000`); sin CR3 por proceso.
 - Hash de claves: FNV-1a + pepper, no un KDF.
 
 ## Mapa de módulos (actual)
@@ -69,7 +69,9 @@ Cuando exista la tabla (Fase 5 / contrato):
 4. Stub user (si aplica): wrappers en `user/libnos/` o equivalente.
 5. Criterio: un programa puede ejercer el syscall sin corromper el kernel.
 
-Números: 0 `exit`, 1 `write`, 2 `read`, 3 `yield`, 4 `getpid`, 5 `mmap` (bump anónimo; `prot` ignorado), 6 `open`, 7 `close`. Detalle y límites: [`abi.md`](abi.md).
+Números: 0 `exit`, 1 `write`, 2 `read`, 3 `yield`, 4 `getpid`, 5 `mmap`
+(bump; `PROT_WRITE|PROT_EXEC` → `-1`), 6 `open`, 7 `close`, 8 `spawn`, 9 `exec`.
+Detalle y límites: [`abi.md`](abi.md).
 
 ## Multiboot2 y framebuffer
 
