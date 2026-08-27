@@ -196,5 +196,5 @@ make clean
 ## Documentación relacionada
 
 - [DEV.md](DEV.md) — mapa de módulos y cómo extender el kernel
-- [../ROADMAP.md](../ROADMAP.md) — plan de fases
+- [ROADMAP.md](ROADMAP.md) — plan vivo (canónico; 0–11 cerradas)
 - [../README.md](../README.md) — visión general

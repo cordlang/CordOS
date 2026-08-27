@@ -2,6 +2,17 @@
 
 Mapa del árbol, convenciones y cómo añadir syscalls o drivers. Arquitectura objetivo: **x86_64** (`ARCH=x86_64`). i386 se mantiene como demo congelada.
 
+**Qué sigue no se decide aquí.** Fuente de verdad: [`ROADMAP.md`](ROADMAP.md).
+ABI implementada: [`abi.md`](abi.md). Este mapa de rutas está atrasado respecto
+al árbol (`src/kernel/`, `src/proc/`, …).
+
+Notas honestas (agosto 2026), sin inventar ABI:
+
+- `mmap` no es stub: bump anónimo `PAGE_USER`, siempre writable. **`prot` se ignora.**
+- `read`/`write` no multiplexan fds VFS (0 = teclado, 1 = VGA). `open`/`close` sí hablan con VFS.
+- No hay `spawn`/`exec`. El ELF de smoke lo lanza el kernel.
+- Hash de claves: FNV-1a + pepper, no un KDF.
+
 ## Mapa de módulos (actual)
 
 ```text
@@ -58,7 +69,7 @@ Cuando exista la tabla (Fase 5 / contrato):
 4. Stub user (si aplica): wrappers en `user/libnos/` o equivalente.
 5. Criterio: un programa puede ejercer el syscall sin corromper el kernel.
 
-Números iniciales del contrato: 0 `exit`, 1 `write`, 2 `read`, 3 `yield`, 4 `getpid`, 5 `mmap` (stub OK).
+Números: 0 `exit`, 1 `write`, 2 `read`, 3 `yield`, 4 `getpid`, 5 `mmap` (bump anónimo; `prot` ignorado), 6 `open`, 7 `close`. Detalle y límites: [`abi.md`](abi.md).
 
 ## Multiboot2 y framebuffer
 
