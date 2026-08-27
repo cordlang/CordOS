@@ -75,17 +75,21 @@ static int valid_name(const char *name)
     if (name == NULL || name[0] == '\0') {
         return 0;
     }
+    if (name[0] == '.' && (name[1] == '\0' ||
+                           (name[1] == '.' && name[2] == '\0'))) {
+        return 0;
+    }
     for (i = 0; i < 32u; ++i) {
         char c = name[i];
 
         if (c == '\0') {
             return 1;
         }
-        if (c == '/' || c == '\\') {
+        if (c == '/' || c == '\\' || (u8)c < 32u) {
             return 0;
         }
     }
-    return name[32] == '\0';
+    return 0;
 }
 
 static void copy_name(char *dst, const char *src)

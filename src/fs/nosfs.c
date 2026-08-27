@@ -33,7 +33,7 @@ static int name_eq(const char *a, const char *b32)
             return 1;
         }
     }
-    return a[32] == '\0';
+    return 0;
 }
 
 int nosfs_mount(const u8 *blob, u32 size)

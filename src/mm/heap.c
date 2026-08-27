@@ -49,7 +49,16 @@ static spinlock_t heap_lock;
 
 static size_t align_up(size_t value, size_t alignment)
 {
-    return (value + alignment - 1u) & ~(alignment - 1u);
+    size_t mask;
+
+    if (alignment == 0 || (alignment & (alignment - 1u)) != 0) {
+        return value;
+    }
+    mask = alignment - 1u;
+    if (value > ~(size_t)0 - mask) {
+        return 0;
+    }
+    return (value + mask) & ~mask;
 }
 
 static void heap_coalesce(void)
@@ -150,6 +159,7 @@ static int heap_expand(size_t need)
 
     bytes = (size_t)pages * PAGE_SIZE;
     if (heap_append_region((u8 *)phys, bytes) < 0) {
+        pmm_free_contiguous(phys, pages);
         return -1;
     }
     heap_pages_os += pages;
@@ -253,9 +263,16 @@ void *kmalloc(size_t size)
     if (size == 0) {
         return NULL;
     }
+    if (size > (size_t)0x7fffffffu - (sizeof(struct heap_block) + HEAP_ALIGN)) {
+        return NULL;
+    }
 
     HEAP_LOCK();
     size = align_up(size, HEAP_ALIGN);
+    if (size == 0) {
+        HEAP_UNLOCK();
+        return NULL;
+    }
     p = heap_try_alloc(size);
 #ifdef __x86_64__
     if (p == NULL && heap_expand(size) == 0) {

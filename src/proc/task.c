@@ -127,7 +127,37 @@ u32 task_create(void (*entry)(void), const char *name)
         task->kstack_top = NULL;
     }
 
-    task->pid = next_pid_os++;
+    {
+        u32 tries;
+        u32 pid = 0;
+
+        for (tries = 0; tries < TASK_MAX_OS + 2u; ++tries) {
+            u32 cand = next_pid_os++;
+            u32 k;
+
+            if (next_pid_os == 0) {
+                next_pid_os = 1;
+            }
+            if (cand == 0) {
+                continue;
+            }
+            for (k = 0; k < TASK_MAX_OS; ++k) {
+                if (task_table_os[k].state != TASK_DEAD &&
+                    task_table_os[k].pid == cand) {
+                    cand = 0;
+                    break;
+                }
+            }
+            if (cand != 0) {
+                pid = cand;
+                break;
+            }
+        }
+        if (pid == 0) {
+            return 0;
+        }
+        task->pid = pid;
+    }
     task->name = name ? name : "?";
     task_entries_os[i] = entry;
     setup_stack(task);

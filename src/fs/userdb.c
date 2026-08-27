@@ -9,6 +9,83 @@ static struct user_rec s_users[USERDB_MAX];
 static u32 s_count;
 static u32 s_cur;
 
+#define PASS_TAG     "h1"
+#define PASS_TAG_LEN 2u
+#define PASS_HEX_LEN 16u
+#define PASS_STORED  19u
+
+static u64 fnv1a64_pass(const char *slug, const char *pass)
+{
+    static const char pepper[] = "CordOS.userdb.v1";
+    u64 h = 14695981039346656037ull;
+    const char *p;
+
+    for (p = slug; p != NULL && *p != '\0'; ++p) {
+        h ^= (u8)*p;
+        h *= 1099511628211ull;
+    }
+    h ^= 0xFFu;
+    h *= 1099511628211ull;
+    for (p = pass; p != NULL && *p != '\0'; ++p) {
+        h ^= (u8)*p;
+        h *= 1099511628211ull;
+    }
+    for (p = pepper; *p != '\0'; ++p) {
+        h ^= (u8)*p;
+        h *= 1099511628211ull;
+    }
+    return h;
+}
+
+static void pass_store(char *dst, u32 max, const char *pass, const char *slug)
+{
+    static const char hex[] = "0123456789abcdef";
+    u64 h = fnv1a64_pass(slug, pass);
+    u32 i;
+
+    if (dst == NULL || max < PASS_STORED) {
+        return;
+    }
+    dst[0] = PASS_TAG[0];
+    dst[1] = PASS_TAG[1];
+    for (i = 0; i < PASS_HEX_LEN; ++i) {
+        dst[PASS_TAG_LEN + i] =
+            hex[(h >> (60u - 4u * i)) & 0xFu];
+    }
+    dst[PASS_TAG_LEN + PASS_HEX_LEN] = '\0';
+}
+
+static int pass_is_hash(const char *s)
+{
+    u32 i;
+
+    if (s == NULL || s[0] != PASS_TAG[0] || s[1] != PASS_TAG[1]) {
+        return 0;
+    }
+    for (i = 0; i < PASS_HEX_LEN; ++i) {
+        char c = s[PASS_TAG_LEN + i];
+
+        if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f'))) {
+            return 0;
+        }
+    }
+    return s[PASS_TAG_LEN + PASS_HEX_LEN] == '\0';
+}
+
+static int ct_eq_n(const char *a, const char *b, u32 n)
+{
+    u32 i;
+    u8 d = 0;
+
+    if (a == NULL || b == NULL) {
+        return 0;
+    }
+    for (i = 0; i < n; ++i) {
+        d |= (u8)a[i] ^ (u8)b[i];
+    }
+    return d == 0;
+}
+
 static int streq(const char *a, const char *b)
 {
     if (a == NULL || b == NULL) {
@@ -193,28 +270,43 @@ void userdb_load(void)
     buf[n] = '\0';
     lp = 0;
     line[0] = '\0';
-    for (i = 0; i <= (u32)n && s_count < USERDB_MAX; ++i) {
-        char c = (i == (u32)n) ? '\n' : buf[i];
+    {
+        int migrated = 0;
 
-        if (c == '\n' || c == '\r') {
-            line[lp] = '\0';
-            if (lp == 0) {
+        for (i = 0; i <= (u32)n && s_count < USERDB_MAX; ++i) {
+            char c = (i == (u32)n) ? '\n' : buf[i];
+
+            if (c == '\n' || c == '\r') {
+                line[lp] = '\0';
+                if (lp == 0) {
+                    continue;
+                }
+                if (want_name) {
+                    copy_z(s_users[s_count].name, USERDB_NAME_MAX, line);
+                    make_slug(s_users[s_count].slug, USERDB_SLUG_MAX, line);
+                    want_name = 0;
+                } else {
+                    copy_z(s_users[s_count].pass, USERDB_PASS_MAX, line);
+                    if (!pass_is_hash(s_users[s_count].pass)) {
+                        char plain[USERDB_PASS_MAX];
+
+                        copy_z(plain, sizeof(plain), s_users[s_count].pass);
+                        pass_store(s_users[s_count].pass, USERDB_PASS_MAX, plain,
+                                   s_users[s_count].slug);
+                        migrated = 1;
+                    }
+                    want_name = 1;
+                    s_count++;
+                }
+                lp = 0;
                 continue;
             }
-            if (want_name) {
-                copy_z(s_users[s_count].name, USERDB_NAME_MAX, line);
-                make_slug(s_users[s_count].slug, USERDB_SLUG_MAX, line);
-                want_name = 0;
-            } else {
-                copy_z(s_users[s_count].pass, USERDB_PASS_MAX, line);
-                want_name = 1;
-                s_count++;
+            if (lp + 1u < sizeof(line)) {
+                line[lp++] = c;
             }
-            lp = 0;
-            continue;
         }
-        if (lp + 1u < sizeof(line)) {
-            line[lp++] = c;
+        if (migrated) {
+            (void)save_db();
         }
     }
     serial_write("userdb: loaded ");
@@ -275,9 +367,9 @@ int userdb_add(const char *name, const char *pass)
     u = &s_users[s_count];
     memset(u, 0, sizeof(*u));
     copy_z(u->name, USERDB_NAME_MAX, name);
-    copy_z(u->pass, USERDB_PASS_MAX, pass);
     make_slug(u->slug, USERDB_SLUG_MAX, name);
     uniquify_slug(u->slug, USERDB_SLUG_MAX);
+    pass_store(u->pass, USERDB_PASS_MAX, pass, u->slug);
     s_count++;
     s_cur = s_count - 1u;
     create_home(u->slug, u->name);
@@ -294,15 +386,33 @@ int userdb_add(const char *name, const char *pass)
 int userdb_auth(const char *name, const char *pass)
 {
     u32 i;
+    char hashed[USERDB_PASS_MAX];
 
     if (name == NULL || pass == NULL) {
         return 0;
     }
     for (i = 0; i < s_count; ++i) {
-        if ((streq(name, s_users[i].name) || streq(name, s_users[i].slug)) &&
-            streq(pass, s_users[i].pass)) {
-            s_cur = i;
-            return 1;
+        if (!(streq(name, s_users[i].name) || streq(name, s_users[i].slug))) {
+            continue;
+        }
+        if (pass_is_hash(s_users[i].pass)) {
+            pass_store(hashed, sizeof(hashed), pass, s_users[i].slug);
+            if (ct_eq_n(hashed, s_users[i].pass, PASS_STORED - 1u)) {
+                s_cur = i;
+                return 1;
+            }
+        } else {
+            char plain[USERDB_PASS_MAX];
+
+            memset(plain, 0, sizeof(plain));
+            copy_z(plain, sizeof(plain), pass);
+            if (ct_eq_n(plain, s_users[i].pass, USERDB_PASS_MAX)) {
+                pass_store(s_users[i].pass, USERDB_PASS_MAX, pass,
+                           s_users[i].slug);
+                (void)save_db();
+                s_cur = i;
+                return 1;
+            }
         }
     }
     return 0;
@@ -311,9 +421,20 @@ int userdb_auth(const char *name, const char *pass)
 int userdb_auth_current(const char *pass)
 {
     const struct user_rec *u = userdb_current();
+    char hashed[USERDB_PASS_MAX];
 
     if (u == NULL || pass == NULL) {
         return 0;
     }
-    return streq(pass, u->pass);
+    if (pass_is_hash(u->pass)) {
+        pass_store(hashed, sizeof(hashed), pass, u->slug);
+        return ct_eq_n(hashed, u->pass, PASS_STORED - 1u);
+    }
+    {
+        char plain[USERDB_PASS_MAX];
+
+        memset(plain, 0, sizeof(plain));
+        copy_z(plain, sizeof(plain), pass);
+        return ct_eq_n(plain, u->pass, USERDB_PASS_MAX);
+    }
 }

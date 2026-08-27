@@ -22,7 +22,7 @@ PY := $(shell if [ -x /tmp/iconsvenv/bin/python ]; then echo /tmp/iconsvenv/bin/
 	elif [ -x /tmp/nv/bin/python ]; then echo /tmp/nv/bin/python; \
 	else echo python3; fi)
 
-.PHONY: all clean run run-vbox check mbr disk run-bios run-persist userland
+.PHONY: all clean run run-vbox check check-host mbr disk run-bios run-persist userland
 
 ifeq ($(ARCH),i386)
 
@@ -180,6 +180,7 @@ KERNEL64_OBJS := \
 	out/pmm64.o \
 	out/vmm64.o \
 	out/heap64.o \
+	out/kselftest.o \
 	out/page_fault64.o \
 	out/task.o \
 	out/sched.o \
@@ -287,6 +288,8 @@ out/pmm64.o: src/mm/pmm64.c $(PUB_HDRS) | build
 out/vmm64.o: src/mm/vmm64.c $(PUB_HDRS) | build
 	$(CC64) $(CFLAGS64) -c $< -o $@
 out/heap64.o: src/mm/heap.c $(PUB_HDRS) | build
+	$(CC64) $(CFLAGS64) -c $< -o $@
+out/kselftest.o: src/kernel/kselftest.c $(PUB_HDRS) | build
 	$(CC64) $(CFLAGS64) -c $< -o $@
 out/page_fault64.o: src/mm/page_fault.c $(PUB_HDRS) | build
 	$(CC64) $(CFLAGS64) -c $< -o $@
@@ -470,7 +473,14 @@ out/user_hello.elf: out/user/test_write.o out/user/syscall.o
 
 userland: out/user_hello.elf
 
-check: out/cordos.bin
+check-host: | build
+	gcc -std=c11 -Wall -Wextra -Werror -O2 -fno-builtin \
+		-I src/include -I src/include/kernel \
+		tests/host/test_core.c src/kernel/string.c src/kernel/utf8.c \
+		-o out/test_core
+	out/test_core
+
+check: out/cordos.bin check-host
 	$(GRUB_FILE) --is-x86-multiboot2 $<
 
 GRUBCFG ?= grub64.cfg

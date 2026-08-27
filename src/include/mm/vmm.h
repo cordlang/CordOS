@@ -18,6 +18,8 @@ void vmm_map_page(u64 virtual_addr, u64 physical_addr, u32 flags);
 void vmm_unmap_page(u64 virtual_addr);
 u64 vmm_get_physical(u64 virtual_addr);
 int vmm_page_mapped(u64 virtual_addr);
+/* Present and PAGE_USER at the leaf (and 2MiB PDE). Syscall copies. */
+int vmm_page_user(u64 virtual_addr);
 #else
 extern volatile u32 page_directory_os;
 

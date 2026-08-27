@@ -69,6 +69,7 @@ void kmain64(void *mb2_addr)
     pmm_init(mb2_addr);
     vmm_init();
     heap_init();
+    kselftest_run();
     (void)_kernel_start;
     (void)_kernel_end;
     fb_parse_cmdline(mb2_addr);

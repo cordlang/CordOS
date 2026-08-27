@@ -277,7 +277,7 @@ u64 pmm_alloc_contiguous(u32 count)
     }
 
     start = 0;
-    while (start + count <= bitmap_frames) {
+    while (start < bitmap_frames && count <= bitmap_frames - start) {
         u32 run = 0;
 
         while (run < count && !pmm_is_used(start + run)) {
@@ -294,10 +294,33 @@ u64 pmm_alloc_contiguous(u32 count)
             return (u64)start * PAGE_SIZE;
         }
         /* First used frame in the window: skip past it. */
+        if (run + 1u > bitmap_frames - start) {
+            break;
+        }
         start = start + run + 1u;
     }
 
     return 0;
+}
+
+void pmm_free_contiguous(u64 phys, u32 count)
+{
+    u32 start;
+    u32 i;
+
+    if (count == 0 || (phys % PAGE_SIZE) != 0) {
+        return;
+    }
+    start = (u32)(phys / PAGE_SIZE);
+    if (start >= bitmap_frames) {
+        return;
+    }
+    if (count > bitmap_frames - start) {
+        count = bitmap_frames - start;
+    }
+    for (i = 0; i < count; ++i) {
+        pmm_free_frame(start + i);
+    }
 }
 
 void pmm_free_frame(u32 frame)

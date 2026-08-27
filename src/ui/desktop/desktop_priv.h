@@ -205,7 +205,10 @@ static inline void copy_n(char *dst, u32 max, const char *src)
 
 static inline bool in_rect(i32 px, i32 py, i32 x, i32 y, i32 w, i32 h)
 {
-    return px >= x && py >= y && px < (x + w) && py < (y + h);
+    if (w <= 0 || h <= 0 || px < x || py < y) {
+        return false;
+    }
+    return (u32)(px - x) < (u32)w && (u32)(py - y) < (u32)h;
 }
 
 static inline const char *win_title(enum win_kind kind)

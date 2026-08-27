@@ -69,10 +69,13 @@ static int user_range_ok(u64 addr, u64 len)
     end = addr + len;
     page = addr & ~((u64)PAGE_SIZE - 1ull);
     while (page < end) {
-        if (!vmm_page_mapped(page)) {
+        if (!vmm_page_user(page)) {
             return 0;
         }
         page += PAGE_SIZE;
+        if (page < addr) {
+            return 0;
+        }
     }
     return 1;
 }
@@ -110,8 +113,15 @@ static int copy_user_path(char *dst, u64 src, u64 max)
         return -1;
     }
     dst[0] = '\0';
+    if (src == 0 || max > SYS_PATH_MAX) {
+        return -1;
+    }
     limit = max - 1u;
     for (i = 0; i < limit; i++) {
+        if (src > ~0ull - i) {
+            dst[0] = '\0';
+            return -1;
+        }
         if (!user_range_ok(src + i, 1)) {
             dst[0] = '\0';
             return -1;
@@ -149,6 +159,9 @@ static i64 sys_write(u64 fd, u64 buf_u, u64 len)
     if (fd != 1) {
         /* vfs_write is Phase 6; extra fds are not writable here. */
         return -1;
+    }
+    if (len == 0) {
+        return 0;
     }
     if (!user_range_ok(buf_u, len)) {
         return -1;
@@ -199,6 +212,9 @@ static i64 sys_read(u64 fd, u64 buf_u, u64 len)
 
     if (fd != 0) {
         return -1;
+    }
+    if (len == 0) {
+        return 0;
     }
     if (!user_range_ok(buf_u, len)) {
         return -1;
@@ -268,6 +284,9 @@ static i64 sys_open(u64 path_u)
 
 static i64 sys_close(u64 fd)
 {
+    if (fd > (u64)0x7FFFFFFFu) {
+        return -1;
+    }
     return (i64)vfs_close((int)fd);
 }
 

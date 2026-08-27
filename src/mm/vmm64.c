@@ -219,6 +219,43 @@ int vmm_page_mapped(u64 virtual_addr)
     return (pt[pt_i] & PAGE_PRESENT) != 0;
 }
 
+int vmm_page_user(u64 virtual_addr)
+{
+    u32 pml4_i = (u32)((virtual_addr >> 39) & 0x1FFu);
+    u32 pdpt_i = (u32)((virtual_addr >> 30) & 0x1FFu);
+    u32 pd_i = (u32)((virtual_addr >> 21) & 0x1FFu);
+    u32 pt_i;
+    u64 *pdpt;
+    u64 *pd;
+    u64 *pt;
+
+    if (pml4 == NULL ||
+        (pml4[pml4_i] & (PAGE_PRESENT | PAGE_USER)) !=
+            (PAGE_PRESENT | PAGE_USER)) {
+        return 0;
+    }
+    pdpt = vmm_table_at(pml4[pml4_i]);
+    if ((pdpt[pdpt_i] & (PAGE_PRESENT | PAGE_USER)) !=
+        (PAGE_PRESENT | PAGE_USER)) {
+        return 0;
+    }
+    pd = vmm_table_at(pdpt[pdpt_i]);
+    if ((pd[pd_i] & PAGE_PRESENT) == 0) {
+        return 0;
+    }
+    if (pd[pd_i] & PAGE_PS) {
+        return (pd[pd_i] & PAGE_USER) != 0;
+    }
+    if ((pd[pd_i] & PAGE_USER) == 0) {
+        return 0;
+    }
+
+    pt = vmm_table_at(pd[pd_i]);
+    pt_i = (u32)((virtual_addr >> 12) & 0x1FFu);
+    return (pt[pt_i] & (PAGE_PRESENT | PAGE_USER)) ==
+           (PAGE_PRESENT | PAGE_USER);
+}
+
 void vmm_init(void)
 {
     u64 addr;

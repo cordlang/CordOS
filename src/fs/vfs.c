@@ -46,6 +46,40 @@ static const char *vfs_basename(const char *path)
     return path;
 }
 
+static int name_ok(const char *name)
+{
+    u32 i;
+
+    if (name == NULL || name[0] == '\0') {
+        return 0;
+    }
+    if (name[0] == '.' && (name[1] == '\0' ||
+                           (name[1] == '.' && name[2] == '\0'))) {
+        return 0;
+    }
+    for (i = 0; name[i] != '\0'; ++i) {
+        char c = name[i];
+
+        if (c == '/' || c == '\\' || (u8)c < 32u) {
+            return 0;
+        }
+        if (i >= 31u) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+static int vfs_owned(const struct vfs_file *f)
+{
+    u32 pid = current_task_os != NULL ? current_task_os->pid : 0u;
+
+    if (pid == 0) {
+        return 1;
+    }
+    return f->owner_pid == pid;
+}
+
 static int path_is_root(const char *path)
 {
     const char *p = path;
@@ -146,7 +180,7 @@ int vfs_open(const char *path)
     }
 
     name = vfs_basename(path);
-    if (*name == '\0') {
+    if (!name_ok(name)) {
         return -1;
     }
 
@@ -186,7 +220,7 @@ int vfs_create(const char *path)
         return -1;
     }
     name = vfs_basename(path);
-    if (*name == '\0') {
+    if (!name_ok(name)) {
         return -1;
     }
     return nosfs_disk_put(name, NULL, 0);
@@ -206,7 +240,7 @@ ssize_t vfs_read(int fd, void *buf, size_t len)
     }
 
     f = &s_fds[fd];
-    if (!f->used) {
+    if (!f->used || !vfs_owned(f)) {
         return -1;
     }
 
@@ -246,7 +280,7 @@ ssize_t vfs_write(int fd, const void *buf, size_t len)
     }
 
     f = &s_fds[fd];
-    if (!f->used) {
+    if (!f->used || !vfs_owned(f)) {
         return -1;
     }
     if (!s_disk) {
@@ -272,7 +306,7 @@ int vfs_close(int fd)
     if (!s_ready || fd < 0 || fd >= VFS_MAX_FD) {
         return -1;
     }
-    if (!s_fds[fd].used) {
+    if (!s_fds[fd].used || !vfs_owned(&s_fds[fd])) {
         return -1;
     }
     s_fds[fd].used = 0;
