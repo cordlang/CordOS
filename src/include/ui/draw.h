@@ -42,14 +42,17 @@ u32 draw_text_width_h(const char *text, u32 height);
 void draw_text_centered(u32 cx, u32 y, const char *text, struct rgb color,
                         u32 scale);
 void draw_panel(u32 x, u32 y, u32 w, u32 h, bool focused);
+/* Opaque CSD surface: 8 px shadow, 1 px ring, hard fill. */
+void draw_surface(u32 x, u32 y, u32 w, u32 h, u32 rad, bool focused);
 void draw_field(u32 x, u32 y, u32 w, u32 h, const char *text, bool password,
                 bool focused);
 void draw_button(u32 x, u32 y, u32 w, u32 h, const char *label, bool focused);
 void draw_icon(u32 x, u32 y, u32 size, enum ui_icon icon, struct rgb color);
 void draw_icon_styled(u32 x, u32 y, u32 size, enum ui_icon icon, struct rgb color,
                       u32 style);
+void draw_window_close_rect(u32 x, u32 y, u32 w, u32 *cx, u32 *cy, u32 *cs);
 void draw_window_frame(u32 x, u32 y, u32 w, u32 h, const char *title,
-                       bool focused, bool close_hot);
+                       enum ui_icon icon, bool focused, bool close_hot);
 enum cursor_kind {
     CURSOR_KIND_ARROW = 0,
     CURSOR_KIND_POINTER = 1

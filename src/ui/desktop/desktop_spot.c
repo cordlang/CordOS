@@ -249,12 +249,10 @@ void draw_spot(void)
     u32 tx;
     u32 ty;
     u32 text_h = 22u;
-    struct rgb panel = { 0x1A, 0x1A, 0x1E };
-    struct rgb sel = { 0x32, 0x5A, 0xC8 };
     const char *show;
 
     spot_geom(&x, &y, &w, &h);
-    draw_round_fill_hard(x, y, w, h, 22u, panel, 240u);
+    draw_surface(x, y, w, h, THEME_RAD_WIN, true);
 
     draw_spot_lens(x + 22u, y + (SPOT_BAR_H > 22u ? (SPOT_BAR_H - 22u) / 2u : 0),
                    22u, THEME_FG_DIM);
@@ -294,7 +292,7 @@ void draw_spot(void)
         if (hot) {
             draw_round_fill(x + 10u, ry + 4u, w > 20u ? w - 20u : w,
                             SPOT_ROW_H > 8u ? SPOT_ROW_H - 8u : SPOT_ROW_H, 12u,
-                            sel, 220u);
+                            THEME_HOVER, 255u);
         }
         draw_icon(x + 22u, iy, 28u, s_spot_hits[i].icon,
                   hot ? THEME_FG : THEME_FG_DIM);

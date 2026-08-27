@@ -137,8 +137,15 @@ u32 hit_test(i32 px, i32 py)
         if (!in_rect(px, py, wx, wy, ww, wh)) {
             continue;
         }
-        if (in_rect(px, py, wx + 10, wy + 10, 28, 28)) {
-            return HIT_CLOSE + id;
+        {
+            u32 cx;
+            u32 cy;
+            u32 cs;
+
+            draw_window_close_rect((u32)wx, (u32)wy, w->w, &cx, &cy, &cs);
+            if (in_rect(px, py, (i32)cx, (i32)cy, (i32)cs, (i32)cs)) {
+                return HIT_CLOSE + id;
+            }
         }
         if (in_rect(px, py, wx, wy, ww, (i32)TITLE_H)) {
             return HIT_TITLE + id;

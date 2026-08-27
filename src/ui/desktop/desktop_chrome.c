@@ -317,7 +317,7 @@ void draw_menu(void)
     u32 i;
 
     menu_geom(&mx, &my, &mw, &mh);
-    draw_round_fill_hard(mx, my, mw, mh, THEME_RAD_CARD, THEME_GLASS, 240u);
+    draw_surface(mx, my, mw, mh, THEME_RAD_WIN, true);
     for (i = 0; i < MENU_COUNT; ++i) {
         u32 ry = my + MENU_INSET + i * MENU_ROW;
         u32 text_y = ry + (MENU_ROW > FONT_HEIGHT ? (MENU_ROW - FONT_HEIGHT) / 2u : 0);
@@ -352,7 +352,7 @@ static void draw_ctx(void)
     u32 desk_sel = wallpaper_desk_id();
 
     ctx_geom(&mx, &my, &mw, &mh);
-    draw_round_fill_hard(mx, my, mw, mh, THEME_RAD_CARD, THEME_GLASS, 240u);
+    draw_surface(mx, my, mw, mh, THEME_RAD_WIN, true);
     draw_text(mx + 18u, my + MENU_INSET + 6u, i18n(MSG_CTX_TITLE),
               THEME_FG_DIM, 1);
     rows_y = my + MENU_INSET + CTX_HEADER;

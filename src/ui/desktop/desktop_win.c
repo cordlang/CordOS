@@ -1087,7 +1087,8 @@ void paint_windows(void)
         focused = (z_top() == (i32)id);
         close_hot = (s_hover == HIT_CLOSE + id);
         draw_window_frame((u32)w->x, (u32)w->y, w->w, w->h,
-                          win_title(w->kind), focused, close_hot);
+                          win_title(w->kind), win_icon(w->kind), focused,
+                          close_hot);
         draw_win_body(w, id);
     }
 }

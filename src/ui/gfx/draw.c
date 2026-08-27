@@ -3,6 +3,7 @@
 #include "fb.h"
 #include "font.h"
 #include "icons.h"
+#include "metrics.h"
 #include "persist.h"
 #include "pmm.h"
 #include "utf8.h"
@@ -1087,7 +1088,9 @@ void draw_icon_style_thumb(u32 x, u32 y, u32 w, u32 h, u32 style, bool selected)
     draw_icon_styled(ix, iy, isz, UI_ICON_SETTINGS, THEME_FG, style);
 }
 
-#define TITLEBAR_H 48u
+#define TITLEBAR_H ui_px(48u)
+#define WIN_CLOSE_SZ 28u
+#define WIN_CLOSE_PAD 10u
 
 static void draw_mark_x(u32 cx, u32 cy, struct rgb col)
 {
@@ -1107,48 +1110,109 @@ static void draw_mark_x(u32 cx, u32 cy, struct rgb col)
     }
 }
 
-static void draw_mark_minus(u32 cx, u32 cy, struct rgb col)
+static void draw_drop_shadow(u32 x, u32 y, u32 w, u32 h, u32 rad)
 {
-    u32 i;
+    if (w < 12u || h < 12u) {
+        return;
+    }
+    draw_round_fill(x + 3u, y + 6u, w, h, rad + 2u, THEME_SHADOW, 58u);
+    draw_round_fill(x + 1u, y + 3u, w, h, rad + 1u, THEME_SHADOW, 40u);
+}
 
-    for (i = 0; i < 9u; ++i) {
-        fb_blend_pixel(cx - 4u + i, cy, col.r, col.g, col.b, 255u);
-        fb_blend_pixel(cx - 4u + i, cy + 1u, col.r, col.g, col.b, 220u);
+void draw_surface(u32 x, u32 y, u32 w, u32 h, u32 rad, bool focused)
+{
+    struct rgb ring = focused ? THEME_BORDER : THEME_GRID;
+    u32 ir;
+
+    if (w < 8u || h < 8u) {
+        return;
+    }
+    draw_drop_shadow(x, y, w, h, rad);
+    draw_round_fill_hard(x, y, w, h, rad, ring, 255u);
+    ir = rad > 1u ? rad - 1u : 0u;
+    if (w > 2u && h > 2u) {
+        draw_round_fill_hard(x + 1u, y + 1u, w - 2u, h - 2u, ir, THEME_GLASS, 255u);
     }
 }
 
+void draw_window_close_rect(u32 x, u32 y, u32 w, u32 *cx, u32 *cy, u32 *cs)
+{
+    u32 bar = TITLEBAR_H;
+    u32 sz = WIN_CLOSE_SZ;
+    u32 pad = WIN_CLOSE_PAD;
+
+    *cs = sz;
+    if (w < pad + sz + 8u) {
+        *cx = x + 4u;
+    } else {
+        *cx = x + w - pad - sz;
+    }
+    *cy = y + (bar > sz ? (bar - sz) / 2u : 4u);
+}
+
 void draw_window_frame(u32 x, u32 y, u32 w, u32 h, const char *title,
-                       bool focused, bool close_hot)
+                       enum ui_icon icon, bool focused, bool close_hot)
 {
     u32 rad = THEME_RAD_WIN;
+    u32 ir = rad > 1u ? rad - 1u : 0u;
+    u32 bar = TITLEBAR_H;
+    u32 cx;
+    u32 cy;
+    u32 cs;
+    u32 vis;
+    u32 bx;
     u32 by;
-    struct rgb ink = { 0x3A, 0x22, 0x22 };
-    struct rgb ink2 = { 0x3A, 0x32, 0x14 };
+    u32 icon_sz = 22u;
+    u32 ty;
+    u32 title_x;
+    u32 title_max;
+    u32 tw;
+    struct rgb head = focused ? THEME_TITLE : THEME_BG2;
+    struct rgb xcol;
+    const char *label = title != NULL ? title : "";
 
     if (w < 56u || h < 40u) {
         return;
     }
 
-    draw_round_fill_hard(x, y, w, h, rad, THEME_GLASS, 240u);
-    draw_round_fill_hard(x, y, w, TITLEBAR_H, rad,
-                         focused ? THEME_TITLE : THEME_BG2, 255u);
-    fb_fill_rect(x, y + TITLEBAR_H / 2u, w, TITLEBAR_H - TITLEBAR_H / 2u,
-                 (focused ? THEME_TITLE : THEME_BG2).r,
-                 (focused ? THEME_TITLE : THEME_BG2).g,
-                 (focused ? THEME_TITLE : THEME_BG2).b);
-
-    by = y + (TITLEBAR_H - 16u) / 2u;
-    draw_round_fill(x + 16, by, 16, 16, 8,
-                    close_hot ? THEME_FG : THEME_DANGER, 255u);
-    draw_mark_x(x + 24, by + 8, close_hot ? THEME_BG0 : ink);
-    draw_round_fill(x + 38, by, 16, 16, 8, THEME_ACCENT, 200u);
-    draw_mark_minus(x + 46, by + 8, ink2);
-    draw_round_fill(x + 60, by, 16, 16, 8, THEME_ACCENT, 110u);
-    {
-        u32 ty = y + (TITLEBAR_H > FONT_HEIGHT ? (TITLEBAR_H - FONT_HEIGHT) / 2u : 0);
-        draw_text_clip(x + 88, ty, x + w - 18, title != NULL ? title : "",
-                       focused ? THEME_FG : THEME_FG_DIM, 1);
+    draw_surface(x, y, w, h, rad, focused);
+    draw_round_fill_hard(x + 1u, y + 1u, w - 2u, bar > 1u ? bar - 1u : bar, ir,
+                         head, 255u);
+    if (bar > 2u) {
+        fb_fill_rect(x + 1u, y + bar / 2u, w > 2u ? w - 2u : w, bar / 2u, head.r,
+                     head.g, head.b);
     }
+    fb_fill_rect(x + 1u, y + bar, w > 2u ? w - 2u : w, 1u,
+                 (focused ? THEME_BORDER : THEME_GRID).r,
+                 (focused ? THEME_BORDER : THEME_GRID).g,
+                 (focused ? THEME_BORDER : THEME_GRID).b);
+
+    draw_icon(x + 14u, y + (bar > icon_sz ? (bar - icon_sz) / 2u : 4u), icon_sz,
+              icon, focused ? THEME_FG : THEME_FG_DIM);
+
+    draw_window_close_rect(x, y, w, &cx, &cy, &cs);
+    vis = 24u;
+    if (vis > cs) {
+        vis = cs;
+    }
+    bx = cx + (cs - vis) / 2u;
+    by = cy + (cs - vis) / 2u;
+    draw_round_fill_hard(bx, by, vis, vis, vis / 2u,
+                         close_hot ? THEME_DANGER
+                                   : (focused ? THEME_HOVER : THEME_GRID),
+                         255u);
+    xcol = close_hot ? THEME_FG : THEME_FG_DIM;
+    draw_mark_x(cx + cs / 2u, cy + cs / 2u, xcol);
+
+    ty = y + (bar > FONT_HEIGHT ? (bar - FONT_HEIGHT) / 2u : 0u);
+    tw = draw_text_width(label, 1);
+    title_x = x + (w > tw ? (w - tw) / 2u : 14u);
+    title_max = cx > 8u ? cx - 8u : x + w;
+    if (title_x < x + 42u) {
+        title_x = x + 42u;
+    }
+    draw_text_clip(title_x, ty, title_max, label,
+                   focused ? THEME_FG : THEME_FG_DIM, 1);
 }
 
 static bool cursor_on;
@@ -1481,10 +1545,7 @@ void cursor_flip(u32 x, u32 y)
 
 void draw_panel(u32 x, u32 y, u32 w, u32 h, bool focused)
 {
-    draw_round_fill_hard(x, y, w, h, THEME_RAD_CARD, THEME_GLASS, 240u);
-    if (focused) {
-        draw_round_fill(x + 2, y + 2, w > 4u ? w - 4u : w, 3, 2, THEME_ACCENT, 255u);
-    }
+    draw_surface(x, y, w, h, THEME_RAD_WIN, focused);
 }
 
 void draw_field(u32 x, u32 y, u32 w, u32 h, const char *text, bool password,

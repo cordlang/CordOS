@@ -28,7 +28,7 @@ static const struct rgb THEME_HOVER   = { 0x2E, 0x46, 0x54 };
 static const struct rgb THEME_GRID    = { 0x20, 0x31, 0x3D };
 static const struct rgb THEME_GLASS   = { 0x16, 0x21, 0x2C };
 
-#define THEME_RAD_WIN   14u
+#define THEME_RAD_WIN   12u
 #define THEME_RAD_CARD  18u
 #define THEME_RAD_BTN   12u
 #define THEME_RAD_FIELD 10u

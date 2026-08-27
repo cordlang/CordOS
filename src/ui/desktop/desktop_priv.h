@@ -229,6 +229,19 @@ static inline const char *win_title(enum win_kind kind)
     }
 }
 
+static inline enum ui_icon win_icon(enum win_kind kind)
+{
+    switch (kind) {
+    case WIN_FILES:    return UI_ICON_FILES;
+    case WIN_TERM:     return UI_ICON_TERM;
+    case WIN_SETTINGS: return UI_ICON_SETTINGS;
+    case WIN_ABOUT:    return UI_ICON_ABOUT;
+    case WIN_ACTIVITY: return UI_ICON_ACTIVITY;
+    case WIN_POWER:    return UI_ICON_POWER;
+    default:           return UI_ICON_ABOUT;
+    }
+}
+
 static inline u32 dock_slot_x(u32 dx, u32 i)
 {
     return dx + DOCK_PADX + i * DOCK_SLOT;
