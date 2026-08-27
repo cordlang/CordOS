@@ -1,5 +1,7 @@
 # Fase 3 — Contrato compartido entre agentes
 
+**Cerrado.** x86_64 es el default. El plan vivo es [`docs/ROADMAP.md`](../ROADMAP.md).
+
 Documento de coordinación. Todos los agentes deben leerlo y actualizar la
 sección **Estado por agente** al terminar su parte.
 

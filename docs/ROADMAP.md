@@ -1,8 +1,11 @@
-# CordOS — Roadmap completo
+# CordOS — Roadmap
 
-Documento único de planificación. Define principios, estado actual, fases,
-prioridades, módulos y criterios de aceptación. No se basa en Linux, macOS ni
-Windows: se construye desde cero como sistema freestanding.
+Plan vivo del sistema. Fuente de verdad para **qué sigue**, no un diario de
+agentes. Contratos viejos (Fases 3 y 4–11) están **cerrados**; no abrir trabajo
+nuevo contra ellos.
+
+Complementos: [`UI_PLAN.md`](UI_PLAN.md) (UX), [`VISUAL_ROADMAP.md`](VISUAL_ROADMAP.md)
+(motion / frame time), [`abi.md`](abi.md) (syscalls), [`USER.md`](USER.md) (cómo arrancar).
 
 ---
 
@@ -10,369 +13,307 @@ Windows: se construye desde cero como sistema freestanding.
 
 | Principio | Significado |
 |---|---|
-| Desde cero | Kernel propio, ABI propia, formato de ejecutables propio, FS propio. |
-| Freestanding | Sin libc del anfitrión. Solo lo que nosotros implementemos. |
-| Incremental | Cada fase deja algo arrancable y comprobable en QEMU. |
-| Independencia | GRUB y tools de host son andamiaje de desarrollo; el producto final no los necesita. |
-| Claridad | Preferir diseño simple y documentado antes que features prematuras. |
+| Desde cero | Kernel propio, ABI propia, FS propio. |
+| Freestanding | Sin libc del anfitrión. CordOS **es** el anfitrión. |
+| Incremental | Cada hito deja `.\run-vbox.ps1` arrancable. |
+| Independencia | GRUB y el toolchain son andamiaje; el producto no los necesita para siempre. |
+| Honesto | El escritorio es OS real y aún corre en ring 0. No fingir userland. |
 
-### Qué NO es CordOS
+**No es** un fork de Linux/Windows/macOS, ni userspace sobre otro kernel.
 
-- No es un clone de Linux, ni un fork, ni un userspace sobre otro kernel.
-- No reutiliza drivers, syscalls ni layouts de Windows/macOS/Linux.
-- No depende de un sistema operativo anfitrión en tiempo de ejecución.
-
-### Qué SÍ puede usar temporalmente
-
-- GRUB / Multiboot (arranque) hasta tener bootloader propio.
-- QEMU (pruebas).
-- Toolchain cruzada `i686-elf` / luego `x86_64-elf` (compilación en el host).
+**Sí usa hoy:** GRUB/Multiboot2, QEMU/VirtualBox, `x86_64-elf-*` en el host.
 
 ---
 
-## 2. Estado actual (baseline)
+## 2. Dónde estamos (agosto 2026)
 
-**Hecho (MVP usable)**
+CordOS es un **sistema operativo gráfico x86_64**. Arranca, pide sesión y deja
+un escritorio con ventanas, dock y Spotlight. El kernel, el VFS y la UI viven
+en el mismo `cordos.bin`.
 
-- [x] Fases 0–11 MVP en `ARCH=x86_64` (shell, VFS/initrd, syscalls, devices, boot BIOS opcional)
-- [x] Consola usable: Enter, Backspace, scroll VGA, barra de estado limpia
+| Capa | Estado | Caveat que importa |
+|---|---|---|
+| Arranque | GRUB + Multiboot2 (default). BIOS MBR experimental | El default sigue siendo GRUB |
+| CPU / IRQ | GDT, IDT, PIC, PIT, PS/2 teclado+ratón | APIC / IPI no |
+| Memoria | PMM, VMM, heap, kselftest al boot | Sin COW ni demand paging |
+| Tareas | `task` + `switch_context` + yield | **Preempt IRQ0 apagado** (congelaba el teclado) |
+| Syscalls | `int 0x80`, números 0–7, copy user exige `PAGE_USER` | `mmap` es stub; read/write no multiplexan fds VFS |
+| FS | VFS, NosFS, initrd, disco AHCI/IDE | Persistencia real, no truco de VBox |
+| Shell | Kernel-mode, ES/EN, F1 emergencia | No es un proceso usuario |
+| UI | Idioma → splash → onboarding/login → desktop | Apps del dock = código kernel |
+| Red | PCI, virtio-net, WLAN host path | Detectar ≠ stack usable |
+| SMP | `cpu_count_os = 1` | Stub a propósito |
+| Marca | Logo y UI propios | `config.c` sigue en `temporal` (versión, autor, licencia) |
 
-**Futuro (backlog, no bloquea uso actual)**
-
-- UI de producto: [`docs/UI_PLAN.md`](docs/UI_PLAN.md) — splash → login → Home
-- Visual, motion y rendimiento (juegos + dev): [`docs/VISUAL_ROADMAP.md`](VISUAL_ROADMAP.md)
-- Ring 3 + userland completo
-- ATA + nosfs en disco
-- Red / SMP AP / GUI avanzada (compositor)
-- Bootloader nativo como default (hoy: `make run` = GRUB; `make run-bios` experimental)
-
----
-
-## 3. Prioridades globales
-
-Orden de decisión cuando haya conflicto de tiempo:
-
-1. **P0 — Arranque estable y depurable** (no romper `make run`)
-2. **P1 — Hardware mínimo usable** (timer, teclado, memoria)
-3. **P2 — Aislamiento** (modo usuario, procesos, syscalls)
-4. **P3 — Persistencia y shell** (disco, FS, comandos)
-5. **P4 — Autonomía** (bootloader propio, red, GUI opcional)
-6. **P5 — Pulido** (SMP, seguridad avanzada, portabilidad)
+**Hecho y cerrado:** Fases 0–11 del plan original (cimientos → x86_64 → tasks →
+syscalls → FS → shell → boot BIOS opcional → devices stub → SMP stub → FB +
+docs). El contrato [`phases/PHASES_4_11_CONTRACT.md`](phases/PHASES_4_11_CONTRACT.md)
+es histórico.
 
 ---
 
-## 4. Fases del roadmap
+## 3. Prioridades (ahora)
 
-Cada fase tiene: objetivo, prioridad, módulos/funciones, dependencias y
-criterio de “hecho”.
+Cuando haya conflicto de tiempo, este orden gana:
 
-### Fase 0 — Cimientos del kernel
-**Prioridad:** P0  
-**Estado:** hecha (mínimo viable)  
+1. **P0 — No romper el producto.** `make` + `.\run-vbox.ps1` llega a login/desktop. Serial en `out/serial.log`.
+2. **P1 — Userland de verdad.** Un programa ring 3 que escriba y salga; luego la Terminal del dock.
+3. **P2 — El kernel como kernel.** Preempt que no mate el teclado; mmap real; spawn/exec.
+4. **P3 — Disco y ABI cerrados.** read/write sobre fds VFS; loader ELF o `.nos`.
+5. **P4 — Autonomía.** Bootloader propio como camino documentado (GRUB puede quedar de fallback).
+6. **P5 — Escala.** SMP AP, red usable, W^X / SMAP, vsync / modo juego ([`VISUAL_ROADMAP.md`](VISUAL_ROADMAP.md)).
+
+La GUI **ya no es opcional**. El pulido visual (reloj `dt`, damage rects) es P5
+respecto al aislamiento, no respecto a “¿tenemos desktop?”.
+
+---
+
+## 4. Fases 0–11 (archivo)
+
+Resumen. El detalle de módulos está en el árbol `src/`.
+
+| Fase | Qué era | Estado |
+|---|---|---|
+| 0 | types, string, io, vga, panic, multiboot | Cerrada |
+| 1 | GDT, IDT, PIC, PIT, teclado | Cerrada |
+| 2 | PMM/VMM/heap i386 | Cerrada (demo `ARCH=i386`) |
+| 3 | Long mode, `ARCH=x86_64` default | Cerrada |
+| 4 | Tasks + switch | Cerrada en cooperativo; preempt **no** |
+| 5 | Syscalls 0–5 + ABI | Cerrada; 6–7 open/close VFS; mmap stub |
+| 6 | Initrd + VFS + NosFS + disco | Cerrada (criterio original superado) |
+| 7 | Shell usable | Cerrada en kernel-mode |
+| 8 | MBR + stage2 | Cerrada experimental (`make run-bios`) |
+| 9 | Serial, PCI, virtio-net, pipes stub | Cerrada como detect; red no es producto |
+| 10 | Spinlock + smp stub | Cerrada; 2 CPUs **no** |
+| 11 | FB + docs + UI de producto | Cerrada y **ampliada**: compositor, login, desktop |
+
+No reabrir 0–11 para features nuevas. Eso va a 12+.
+
+---
+
+## 5. Fases abiertas (el trabajo)
+
+Cada fase: objetivo, prioridad, piezas, criterio de hecho. Una a la vez.
+Dependencia: no saltar a 16 (SMP) sin 13 (preempt estable).
+
+### Fase 12 — Marca y contrato de producto
+**Prioridad:** P0 (barato) / deja de ser “temporal”  
 **Dependencias:** ninguna
 
-| Módulo | Funciones / piezas | Notas |
-|---|---|---|
-| `types` | `u8/u16/u32/u64`, `size_t`, `bool`, `NULL` | Listo |
-| `config` | `name_os`, `version_os`, … globales temporales | Listo (`temporal`) |
-| `string` | `strlen`, `memcpy`, `memset`, `memcmp`, `strcpy` | Listo |
-| `io` | `inb`, `outb`, `inw`, `outw`, `inl`, `outl` | Listo |
-| `vga` | `clear`, `putc`, `print`, hex/u32 | Listo (printf completo después) |
-| `panic` | `panic`, `halt_forever` | Listo (assert/stack dump después) |
-| `multiboot` | flags, mem, cmdline, mmap summary | Listo (recorrer entradas mmap en Fase 2) |
+| Pieza | Qué hacer |
+|---|---|
+| `config.c` | `version_os`, `author_os`, `license_os` reales; semver `0.x` |
+| Docs | Este archivo + [`UI_PLAN.md`](UI_PLAN.md) alineados con el desktop actual |
+| Licencia | Un `LICENSE` en la raíz cuando el autor lo fije |
 
-**Criterio de hecho:** kernel limpio por módulos; resumen Multiboot en pantalla; `make run` sigue funcionando.
+**Hecho cuando:** Acerca de y el serial muestran la misma versión; no queda la palabra `temporal` en `config.c`.
 
 ---
 
-### Fase 1 — CPU: GDT, IDT e interrupciones
-**Prioridad:** P0 → P1  
-**Estado:** hecha (mínimo viable)  
-**Dependencias:** Fase 0
-
-| Módulo | Funciones / piezas | Notas |
-|---|---|---|
-| `gdt` | Descriptores planos + TSS placeholder + `ltr` | Listo |
-| `idt` | 256 entradas, gates, `lidt` | Listo |
-| `isr` | Stubs asm + handlers C | Excepciones 0–31 |
-| `irq` | Handlers registrables IRQ 0–15 | Listo |
-| `pic` | remap, EOI, mask/unmask | Listo (APIC después) |
-| `pit` | Canal 0 programable | Listo |
-| `keyboard` | PS/2 Set 1 + buffer circular | Listo (básico US) |
-| `time` | `ticks_os`, `hz_os`, uptime_ms | Listo |
-
-**Criterio de hecho:** excepciones visibles; teclas se imprimen; ticks en barra inferior.
-
----
-
-### Fase 2 — Memoria física y virtual (i386)
+### Fase 13 — Un proceso ring 3 de verdad
 **Prioridad:** P1  
-**Estado:** hecha (mínimo viable)  
-**Dependencias:** Fase 0 (mmap), Fase 1 (excepciones de page fault útiles)
+**Dependencias:** syscalls actuales, VMM `PAGE_USER`, smoke `user_smoke()`
 
-| Módulo | Funciones / piezas | Notas |
+Hoy el escritorio y las “apps” son funciones del kernel. Ring 3 existe como
+prueba (`user.c` imprime `r3` y hace `exit`). Eso no es userland.
+
+| Módulo | Piezas | Notas |
 |---|---|---|
-| `pmm` | Bitmap de frames 4 KiB + stats globales | Desde Multiboot mmap |
-| `vmm` | PD/PT, map/unmap, identity-map + CR0.PG | Listo |
-| `heap` | `kmalloc` / `kfree` en `0xD0000000` | 1 MiB inicial |
-| `page_fault` | Diagnóstico CR2 + bits de error | Panic controlado |
+| `mmap` | `SYS_MMAP` deja de ser `-1` | Páginas user, no identity kernel |
+| Loader | ELF64 mínimo **o** formato `.nos` | ELF subset primero ([§8](#8-decisiones)) |
+| `spawn` / `exec` | Syscall nueva (8+) | Un `user_hello.elf` ya se construye (`make userland`) |
+| libc user | `user/libnos` | `write`/`exit` contra ABI real |
+| Aislamiento | Fault CPL3 mata la tarea, no el kernel | Ya hay esbozo en `page_fault.c` |
 
-**Criterio de hecho:** alloc/free de frames; mapear región; page fault diagnosticado; heap usable.
+**Hecho cuando:** desde el kernel (o un menú de debug) se lanza un ELF que hace
+`write` + `exit` y el desktop **sigue vivo**. No hace falta mover el dock aún.
 
 ---
 
-### Fase 3 — Migración a x86_64 (long mode)
-**Prioridad:** P1  
-**Estado:** hecha (mínimo viable)  
-**Dependencias:** Fase 0; lecciones de Fases 1–2
-
-| Módulo | Funciones / piezas | Notas |
-|---|---|---|
-| Boot 64 | Multiboot2 + long mode + identity 1 GiB | `boot64.s` |
-| Toolchain | `x86_64-elf-gcc` 13.2.0 en `~/opt/cross64` | Listo |
-| Multiboot2 | Tags + summary | Listo |
-| Port Fases 1–2 | GDT/IDT/ISR64, PMM/VMM/heap identity | Listo |
-
-**Decisión:** `ARCH ?= x86_64` por defecto; `make ARCH=i386` conserva el demo 32-bit.
-
-**Criterio de hecho:** ISO x86_64 arranca en QEMU; C en long mode; interrupciones y memoria básicas portadas.
-
----
-
-### Fase 4 — Procesos, scheduler y modo usuario
+### Fase 14 — Preempt y teclado a la vez
 **Prioridad:** P2  
-**Estado:** MVP en curso — *confirmado en árbol:* `src/sched.c`, `src/include/task.h`/`sched.h`, `src/arch/x86_64/switch.s`; *falta confirmar:* `task.c` completo + preemptivo cableado en IRQ0  
-**Dependencias:** Fase 1–2 (o 3 si ya en 64-bit)
+**Dependencias:** Fase 4 (switch), comprensión del bug IF=0
 
-| Módulo | Funciones / piezas | Notas |
-|---|---|---|
-| `task` | PCB/TCB, stacks kernel/user | MVP target F4 |
-| `context` | Save/restore registros, switch | Asm + C (`switch.s`) |
-| `scheduler` | Round-robin cooperativo → preemptivo | Usar PIT/APIC timer |
-| `user_mode` | Ring 3, TSS/IST, iret/sysret | Aislamiento real (post-MVP OK) |
-| `elf_loader` | Cargar ELF propio o formato CordOS | Ver Fase 5 |
+`scheduler_on_tick` está vacío a propósito: un switch en IRQ0 dejaba `IF=0` y
+mataba el PS/2.
 
-**Criterio de hecho:** dos tareas kernel conmutan; luego un programa en ring 3 corre sin corromper el kernel.
+| Pieza | Qué hacer |
+|---|---|
+| IRQ0 | Switch con iret / trampolín que restaure IF |
+| Idle | `hlt` en la tarea idle (ya hay loop) |
+| Prueba | Teclear durante dos tareas que hacen yield **y** durante preempt |
+
+**Hecho cuando:** preempt ON, teclado y ratón del desktop siguen funcionando.
 
 ---
 
-### Fase 5 — Syscalls, ABI y formato de ejecutables
+### Fase 15 — Apps del dock en userland
 **Prioridad:** P2  
-**Estado:** MVP en curso — *confirmado:* `src/syscall.c`, `docs/abi.md`, `user/libnos/syscall.*`, entry asm; *pendiente INT:* wire `phase5_init` / IDT 0x80  
-**Dependencias:** Fase 4
+**Dependencias:** 13 + 14
 
-| Módulo | Funciones / piezas | Notas |
-|---|---|---|
-| `syscall` | Tabla, dispatch, validación de punteros | MVP: `int 0x80` |
-| ABI | Números, registros, errno propio | Target: `docs/abi.md` |
-| `nos` format | Header + segmentos + entry | Alternativa a ELF, o ELF restringido |
-| libc mínima user | `write`, `exit`, `mmap`, `open`… | Stub mínimo en MVP F5 |
+| Pieza | Qué hacer |
+|---|---|
+| Terminal | El builtin del dock lanza un proceso, no `shell_run()` en ring 0 |
+| Syscalls | `read`/`write` sobre fds VFS (hoy 0/1 son teclado/VGA sueltos) |
+| Compositor | Superficie por proceso **o** un servidor gráfico mínimo | Un paso; no Wayland |
+| Fallback | F1 sigue siendo shell kernel | Válvula de escape |
 
-**Syscalls iniciales (mínimo viable)**
-
-| # | Nombre | Función |
-|---|---|---|
-| 0 | `sys_exit` | Terminar proceso |
-| 1 | `sys_write` | Escribir a fd (consola primero) |
-| 2 | `sys_read` | Leer de fd (teclado/consola) |
-| 3 | `sys_yield` | Ceder CPU |
-| 4 | `sys_getpid` | Id de proceso |
-| 5 | `sys_mmap` | Mapear memoria |
-| 6 | `sys_open` / `sys_close` | Tras tener FS |
-| 7 | `sys_spawn` / `sys_exec` | Lanzar programa |
-
-**Criterio de hecho:** programa usuario imprime con `sys_write` y termina con `sys_exit`.
+**Hecho cuando:** Archivos o Terminal sobreviven a un kill del proceso; logout
+no requiere reboot.
 
 ---
 
-### Fase 6 — Almacenamiento y sistema de archivos
-**Prioridad:** P3  
-**Estado:** pendiente — *MVP agent target (F6)*: initrd + VFS + nosfs; **aún no hay `src/fs/`** en árbol al momento F11  
-**Dependencias:** heap, IRQ, DMA/PIO según driver
-
-| Módulo | Funciones / piezas | Notas |
-|---|---|---|
-| `ata` / `ahci` | Leer/escribir sectores | Opcional post-MVP |
-| `block` | Capa de bloques, cache simple | |
-| `vfs` | `mount`, `open`, `read`, `write`, `readdir` | MVP: open/read/close |
-| `nosfs` | FS propio (superblock, inodos, bitmap) | Magic `NOSF` |
-| initrd | Ramdisk inicial embebido en ISO | Criterio mínimo MVP |
-
-**Criterio de hecho:** leer archivo desde initrd; luego persistir en imagen de disco QEMU.
-
----
-
-### Fase 7 — Shell y userland mínimo
-**Prioridad:** P3  
-**Estado:** MVP en curso — *confirmado:* `src/shell.c` + `shell.h` (kernel-mode builtins per F7); *pendiente INT:* llamar `shell_run` desde `kmain64`  
-**Dependencias:** Fase 5–6
-
-| Módulo | Funciones / piezas | Notas |
-|---|---|---|
-| `init` | Primer proceso usuario | Tras F5 user |
-| `shell` | Prompt, parseo, builtins | MVP: help/echo/clear/ls/cat |
-| utils | Pequeños programas `.nos` | Demostrar exec |
-| tty | Línea canónica, echo, Ctrl+C básico | |
-
-**Criterio de hecho:** sesión interactiva usable en QEMU sin depurador.
-
----
-
-### Fase 8 — Bootloader propio (reemplazar GRUB)
+### Fase 16 — Boot autónomo
 **Prioridad:** P4  
-**Estado:** MVP en curso — *confirmado parcial:* `boot/mbr.s`; Stage2/disco/`run-bios` no verificados como MVP completo  
-**Dependencias:** FS básico o etapa 2 embebida; kernel estable
+**Dependencias:** kernel estable (12–14 preferible)
 
-| Módulo | Funciones / piezas | Notas |
-|---|---|---|
-| Stage 1 | MBR/GPT + BIOS o UEFI | MVP: BIOS MBR 512B |
-| Stage 2 | Cargar kernel, setup memoria/video | Carga `cordos.bin` |
-| Protocolo | Header CordOS (dejar Multiboot) | Documentar |
-| Installer | Escribir bootloader a imagen disco | |
+| Pieza | Qué hacer |
+|---|---|
+| Default | Un `make run-bios` (o UEFI) documentado como camino de producto |
+| Protocolo | [`boot_protocol.md`](boot_protocol.md) = lo que Stage2 entrega |
+| GRUB | Fallback de desarrollo, no la historia del README |
 
-**Criterio de hecho:** ISO o disco arranca **sin GRUB**; mismo kernel.
-
----
-
-### Fase 9 — Dispositivos, IPC y red
-**Prioridad:** P4  
-**Estado:** MVP en curso — *confirmado:* `drivers/serial.c`, `pci.c`, `virtio_net.c`, `src/ipc.c`; *pendiente INT:* objs + inits en `kmain64`. Framebuffer stub: Fase 11.  
-**Dependencias:** VFS, IRQ, heap, procesos
-
-| Módulo | Funciones / piezas | Notas |
-|---|---|---|
-| `pci` | Enumeración de dispositivos | MVP: bus 0 |
-| `serial` | COM1 debug | `0x3F8` |
-| `framebuffer` | Modo gráfico básico | Stub MVP en Fase 11 (`drivers/fb`) |
-| `ipc` | Pipes, mensajes, shared memory | MVP: `pipe_create` stub |
-| `net` | NIC virtio-net, stack IP mínimo | MVP: detectar presente |
-| `virtio` | Preferir virtio en QEMU | Menos dolor que hardware legacy |
-
-**Criterio de hecho:** debug por serial; al menos ping o socket local documentado.
+**Hecho cuando:** se puede decir “arranca sin GRUB” en [`USER.md`](USER.md) sin
+la palabra experimental, y el desktop es el mismo.
 
 ---
 
-### Fase 10 — SMP, seguridad y endurecimiento
+### Fase 17 — Memoria y seguridad de kernel
 **Prioridad:** P5  
-**Estado:** MVP en curso — *confirmado:* `spinlock.c`, `smp.c`, `docs/smp.md` (stub sin AP bringup); *pendiente INT:* `phase10_init`  
-**Dependencias:** APIC, scheduler, VMM
+**Dependencias:** 13 (user mappings reales)
 
-| Módulo | Funciones / piezas | Notas |
-|---|---|---|
-| SMP | Arranque APs, per-cpu data | MVP: stub `smp_init`, cpu_id=0 |
-| sync | Spinlocks, mutex, atomics | MVP: `spinlock_t` |
-| capabilities / ACL | Modelo de permisos propio | Post-MVP |
-| ASLR / KASLR | Aleatorizar layouts | Post-MVP |
-| W^X | Páginas no writable+executable | Post-MVP |
+| Pieza | Notas |
+|---|---|
+| W^X | Páginas no W+X en kernel y user |
+| Demand paging / COW | Hoy un fault CPL3 mata la tarea |
+| SMAP / UMIP | Si el CPU guest lo ofrece |
+| Hash de claves | Hoy FNV-1a + pepper; no es Argon2 — documentar o reemplazar |
 
-**Criterio de hecho:** 2+ CPUs en QEMU `-smp 2` con scheduler; pruebas de aislamiento básicas.
+**Hecho cuando:** un programa user no puede leer identity kernel; `docs/abi.md`
+describe el modelo.
 
 ---
 
-### Fase 11 — Experiencia de producto (opcional largo plazo)
+### Fase 18 — SMP y red (producto)
 **Prioridad:** P5  
-**Estado:** MVP en curso/hecho (parcial) — *confirmado:* `docs/USER.md`, `docs/DEV.md`, stub `src/drivers/fb.c` + `fb.h`; *pendiente INT:* enlace `build/fb.o` y `fb_init` en `kmain64`  
-**Dependencias:** casi todo lo anterior (GUI/audio/ports = largo plazo)
+**Dependencias:** 14 (preempt), IPI TLB en `vmm64.c`
 
-**MVP producto (hecho en árbol)**
+| Pieza | Criterio |
+|---|---|
+| AP bring-up | `cpu_count_os > 1` con QEMU/VBox `-smp 2` |
+| TLB shootdown | Dejar de ser “local only” |
+| Red | Ping o TCP mínimo documentado; WLAN host no cuenta como stack guest |
 
-- [x] `docs/USER.md` — build/run WSL + make + QEMU
-- [x] `docs/DEV.md` — mapa de módulos, añadir syscall/driver
-- [x] Framebuffer stub: si tag Multiboot2 tipo 8 usable → pixel de prueba; si no → mensaje no-op
-- [ ] Wire-up Makefile + `kmain64` (orquestador INT)
-
-**Largo plazo (no MVP)**
-
-- GUI / compositor simple
-- Audio
-- Package/runtime propio
-- Documentación de desarrollador de apps
-- Port a otra arquitectura (ej. RISC-V) como prueba de diseño limpio
+**Hecho cuando:** dos núcleos ejecutan tareas; **o** (si se parte la fase) hay
+un camino de red que un usuario puede seguir en [`USER.md`](USER.md).
 
 ---
 
-## 5. Orden de ejecución recomendado (próximos 8 hitos)
+### Fase 19 — Motion y frame time
+**Prioridad:** P5 (producto se siente OS; no bloquea 13)  
+**Dependencias:** desktop actual  
+**Plan detallado:** [`VISUAL_ROADMAP.md`](VISUAL_ROADMAP.md)
 
-| # | Hito | Fase | Prioridad |
+Orden allí: **V1** (`ui_tick` / hover `dt`) → **V3** (wallpaper frozen +
+`present_rect`) → **V2** (páginas / open window) → V4 vsync / modo juego.
+
+Page-flip en el LFB de VBox **no** es el camino; ya se intentó.
+
+**Hecho cuando:** V1 cumple el criterio de ese doc (hover aceite, F1 intacto).
+
+---
+
+## 6. Próximos 8 hitos (orden de ataque)
+
+| # | Hito | Fase | Pri |
 |---|---|---|---|
-| 1 | Separar `vga`, `io`, `types`, `string`, `panic`, parse Multiboot + `config` globales | 0 | P0 — hecho |
-| 2 | GDT + IDT + excepciones + PIC | 1 | P0 — hecho |
-| 3 | PIT + teclado PS/2 | 1 | P1 — hecho |
-| 4 | PMM + VMM + heap + page fault | 2 | P1 — hecho |
-| 5 | Decidir y migrar a x86_64 | 3 | P1 — hecho |
-| 6 | Tasks + scheduler preemptivo | 4 | P2 — MVP hecho |
-| 7 | Ring 3 + syscalls mínimas | 4–5 | P2 — syscalls MVP (ring3 pendiente) |
-| 8 | Initrd + VFS + shell | 6–7 | P3 — MVP hecho |
+| 1 | Fijar `config.c` + dejar de mentir en docs de fase | 12 | P0 |
+| 2 | `SYS_MMAP` real (páginas user) | 13 | P1 |
+| 3 | Cargar y correr `user_hello.elf` desde el kernel | 13 | P1 |
+| 4 | Preempt IRQ0 sin matar PS/2 | 14 | P2 |
+| 5 | `read`/`write` en fds VFS; spawn como syscall | 13–15 | P2 |
+| 6 | Terminal del dock = proceso ring 3 | 15 | P2 |
+| 7 | V1: reloj `dt` en login/onboarding/desktop | 19 | P5 |
+| 8 | Boot sin GRUB como camino documentado **o** `-smp 2` real | 16 / 18 | P4–P5 |
 
-Bootloader propio (Fase 8) **después** de shell usable, no antes.
+Si solo hay tiempo para **uno**: el 3. Sin un ELF en ring 3, CordOS sigue siendo
+un kernel con UI, no un OS que ejecuta programas.
 
 ---
 
-## 6. Estructura de código objetivo
+## 7. Árbol real (`src/`)
 
 ```text
 src/
-  boot/          # entry asm, multiboot, long mode
-  arch/x86/      # gdt, idt, isr, irq, io, cpu
-  kernel/        # kmain, panic, scheduler, syscall
-  mm/            # pmm, vmm, heap
-  drivers/       # vga, keyboard, pit, serial, ata, …
-  fs/            # vfs, nosfs, initrd
-  lib/           # string, printf freestanding
+  boot/            Multiboot, boot64.s
+  arch/x86_64/     GDT, IDT, ISR, PIC, PIT, switch, syscall_entry
+  arch/i386/       demo congelada
+  kernel/          kmain64, config, string, panic, kselftest
+  mm/              PMM, VMM, heap, page_fault
+  proc/            task, sched, syscall, smp, ipc, user smoke
+  drivers/         fb, teclado, ratón, PCI, AHCI, ATA, serial, net, USB/EHCI
+  fs/              vfs, nosfs, initrd, persist, userdb
+  ui/              gfx, login, desktop, session, widgets
+  shell/           emergencia + i18n
+  include/<mod>/   headers públicos
 user/
-  init/
-  shell/
-  libnos/        # libc mínima de usuario
-docs/            # abi, fs layout, boot protocol (cuando existan)
-iso/             # staging GRUB temporal
+  libnos/          stubs syscall usuario
+  test_write.c     / user_hello
+docs/              este archivo, USER, DEV, ABI, UI, visual
 ```
 
-Ir creando carpetas solo cuando la fase correspondiente lo exija (evitar vacío prematuro).
+ISO: `dist/cordos.iso`. Intermedios: `out/`.
 
 ---
 
-## 7. Definiciones de “listo” por capa
+## 8. Decisiones
 
-| Capa | Listo cuando… |
-|---|---|
-| Kernel mínimo | Arranca, imprime, no depende de libc host |
-| Kernel interactivo | Teclado + timer + excepciones |
-| Kernel con memoria | Alloc dinámico + paginación |
-| Kernel multiproceso | Switch de tareas fiable |
-| Sistema usable | Shell + archivos + programas usuario |
-| Sistema autónomo | Bootloader propio + instalable en disco |
-| Sistema serio | SMP + red + modelo de seguridad |
-
----
-
-## 8. Riesgos y decisiones abiertas
-
-| Tema | Opciones | Recomendación provisional |
+| Tema | Cerrado | Abierto |
 |---|---|---|
-| Arquitectura principal | Quedarse en i386 vs pasar a x86_64 | **x86_64** tras Fase 2 |
-| Formato de ejecutables | ELF subset vs formato `.nos` propio | ELF subset primero; `.nos` si aporta simplicidad |
-| Boot | BIOS+MBR vs UEFI | BIOS/QEMU primero; UEFI después |
-| FS | Solo initrd vs FS en disco pronto | Initrd → luego `nosfs` |
-| Drivers | Legacy PIC/ATA vs APIC/virtio | Legacy para aprender; virtio para avanzar rápido en QEMU |
+| Arch principal | **x86_64**. i386 = demo | — |
+| Boot de desarrollo | GRUB + VBox | ¿BIOS o UEFI como default de producto? |
+| FS | NosFS + initrd overlay | Layout on-disk a largo plazo |
+| Ejecutables | — | ELF64 subset vs `.nos` — **ELF primero** |
+| GUI | Compositor 2D propio; no GTK/Qt | Servidor gráfico vs blit in-process |
+| Red | Detectar virtio / WLAN host | Stack IP en guest |
+| SMP | 1 CPU de verdad | AP + IPI |
+| Claves | Hash débil documentable | Sustituir antes de “usuarios reales” |
 
-Actualizar esta sección cuando se cierre cada decisión.
-
----
-
-## 9. Cómo usar este archivo
-
-1. Trabajar **una fase / un hito** a la vez.
-2. Marcar checkboxes del estado actual al completar.
-3. No saltar a shell/GUI sin memoria + interrupciones.
-4. Cada PR/cambio grande debe nombrar la fase (`Fase 1`, `Fase 2`, …).
-5. Si surge trabajo nuevo, añadirlo aquí con prioridad antes de implementarlo.
+Actualizar esta tabla al cerrar una fila.
 
 ---
 
-## 10. Resumen ejecutivo
+## 9. Listo por capa (definición actual)
 
-CordOS ya demostró arranque freestanding. El camino es:
+| Capa | Listo cuando… | ¿Ya? |
+|---|---|---|
+| Kernel mínimo | Arranca freestanding | Sí |
+| Kernel interactivo | Teclado + timer + excepciones | Sí |
+| Kernel con memoria | Heap + paginación | Sí |
+| Producto gráfico | Login → desktop en VBox | Sí |
+| Kernel multiproceso | Switch **y** preempt usable | Switch sí, preempt no |
+| Sistema usable | Programas usuario + archivos | Archivos sí, programas no |
+| Sistema autónomo | Arranque propio + instalable | No |
+| Sistema serio | SMP + red + W^X | No |
 
-**cimientos → interrupciones/entrada → memoria → (x86_64) → procesos/syscalls → FS/shell → bootloader propio → red/SMP/seguridad.**
+---
 
-Todo diseño de ABI, FS, boot y userland es **propio**. Linux/macOS/Windows no son base; solo el hardware y los estándares necesarios (Multiboot temporal, VGA, PC legacy, luego virtio/UEFI según decidamos).
+## 10. Cómo usar este archivo
+
+1. Un hito de la [§6](#6-próximos-8-hitos-orden-de-ataque) por tanda.
+2. Nombrar la fase (`Fase 13`, …) en el cambio.
+3. No reabrir 0–11. No tratar [`UI_PLAN.md`](UI_PLAN.md) “Ola 1” como trabajo
+   de framebuffer: eso ya arranca.
+4. Trabajo visual nuevo → [`VISUAL_ROADMAP.md`](VISUAL_ROADMAP.md) (V1, V3, …).
+5. Si aparece un frente nuevo, **añadirlo aquí con prioridad** antes de
+   implementarlo.
+
+---
+
+## 11. Resumen
+
+**0–11 están hechas.** El hueco que define el siguiente año de CordOS no es
+“¿pintamos un desktop?” sino **¿puede un programa que no es el kernel correr,
+romperse y dejar el escritorio en pie?**
+
+Eso es Fase 13. El resto (preempt, boot propio, SMP, motion) se apoya en eso.

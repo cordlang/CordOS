@@ -1,10 +1,17 @@
 # CordOS — Plan de UI (arranque → home → sistema)
 
-Documento único de planificación de experiencia e interfaz.  
-**Estado:** Ola 0 (texto) hecha; **Ola 1** en curso (login/home gráficos con framebuffer).  
-**Regla:** ejecutar olas en orden; este documento es la fuente de verdad de UX.
+Documento de UX (viaje splash → login → Home). El plan de **kernel y userland**
+está en [`ROADMAP.md`](ROADMAP.md) (Fases 12+). Motion / frame time:
+[`VISUAL_ROADMAP.md`](VISUAL_ROADMAP.md).
 
-Los nombres de marca (`name_os`, colores finales, tipografías) siguen en `temporal` hasta que los fijemos.
+**Estado:** Ola 0 (texto) y **Ola 1 (login/home con framebuffer) hechas.** El
+desktop, dock, ventanas y Spotlight ya arrancan. Lo que queda aquí es pulido de
+viaje (lock, editor, etc.), no “construir el Home”.
+
+**Regla:** no reabrir el framebuffer como si no existiera. Trabajo visual nuevo
+sigue las olas V1–V6 del roadmap visual.
+
+Los strings `name_os` / versión en `config.c` siguen en `temporal` hasta Fase 12.
 
 ---
 
@@ -12,7 +19,8 @@ Los nombres de marca (`name_os`, colores finales, tipografías) siguen en `tempo
 
 Una UI **propia** (no clon de Windows/macOS/Linux) que acompañe al usuario desde que enciende la máquina hasta un **Home** usable, con camino claro hacia apps, ajustes y apagado.
 
-Hoy el sistema tiene shell VGA de texto. Este plan define el destino gráfico y los pasos intermedios sin saltarnos el kernel.
+El destino gráfico **ya corre**. Este archivo describe el viaje y las superficies;
+no es un plan de “un día tendremos login”.
 
 ---
 

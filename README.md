@@ -110,7 +110,7 @@ src/
 | [`docs/USER.md`](docs/USER.md) | Compilar, VirtualBox, QEMU, idioma |
 | [`docs/DEV.md`](docs/DEV.md) | Mapa de módulos, syscalls, drivers |
 | [`docs/UI_PLAN.md`](docs/UI_PLAN.md) | UX: arranque → login → Home |
-| [`docs/ROADMAP.md`](docs/ROADMAP.md) | Fases y prioridades |
+| [`docs/ROADMAP.md`](docs/ROADMAP.md) | Plan vivo (Fases 12+); 0–11 cerradas |
 | [`docs/abi.md`](docs/abi.md) | ABI de syscalls |
 | [`docs/nosfs.md`](docs/nosfs.md) | Sistema de archivos |
 

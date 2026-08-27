@@ -1,8 +1,10 @@
-# CordOS — Contrato fases 4–11 (multi-agente)
+# CordOS — Contrato fases 4–11 (histórico)
+
+**Cerrado.** El plan vivo es [`docs/ROADMAP.md`](../ROADMAP.md) a partir de la
+Fase 12. No asignar trabajo nuevo contra esta tabla.
 
 **Arquitectura objetivo:** solo ampliar `ARCH=x86_64`. No romper i386.
 **No commits** salvo que el usuario lo pida.
-**Comunicación:** cada agente escribe `agent-notes/PHASE{N}_{letra}.md` y actualiza la tabla de estado abajo.
 
 ## Estado
 
