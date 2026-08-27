@@ -42,7 +42,7 @@ u32 draw_text_width_h(const char *text, u32 height);
 void draw_text_centered(u32 cx, u32 y, const char *text, struct rgb color,
                         u32 scale);
 void draw_panel(u32 x, u32 y, u32 w, u32 h, bool focused);
-/* Opaque CSD surface: 8 px shadow, 1 px ring, hard fill. */
+/* Opaque CSD surface. No shadow, no wallpaper blend. */
 void draw_surface(u32 x, u32 y, u32 w, u32 h, u32 rad, bool focused);
 void draw_field(u32 x, u32 y, u32 w, u32 h, const char *text, bool password,
                 bool focused);

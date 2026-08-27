@@ -1110,29 +1110,33 @@ static void draw_mark_x(u32 cx, u32 cy, struct rgb col)
     }
 }
 
-static void draw_drop_shadow(u32 x, u32 y, u32 w, u32 h, u32 rad)
+static void draw_edge_lines(u32 x, u32 y, u32 w, u32 h, u32 rad, struct rgb col)
 {
-    if (w < 12u || h < 12u) {
-        return;
+    if (w > rad * 2u) {
+        fb_fill_rect(x + rad, y, w - rad * 2u, 1u, col.r, col.g, col.b);
+        if (h > 1u) {
+            fb_fill_rect(x + rad, y + h - 1u, w - rad * 2u, 1u, col.r, col.g,
+                         col.b);
+        }
     }
-    draw_round_fill(x + 3u, y + 6u, w, h, rad + 2u, THEME_SHADOW, 58u);
-    draw_round_fill(x + 1u, y + 3u, w, h, rad + 1u, THEME_SHADOW, 40u);
+    if (h > rad * 2u) {
+        fb_fill_rect(x, y + rad, 1u, h - rad * 2u, col.r, col.g, col.b);
+        if (w > 1u) {
+            fb_fill_rect(x + w - 1u, y + rad, 1u, h - rad * 2u, col.r, col.g,
+                         col.b);
+        }
+    }
 }
 
 void draw_surface(u32 x, u32 y, u32 w, u32 h, u32 rad, bool focused)
 {
     struct rgb ring = focused ? THEME_BORDER : THEME_GRID;
-    u32 ir;
 
     if (w < 8u || h < 8u) {
         return;
     }
-    draw_drop_shadow(x, y, w, h, rad);
-    draw_round_fill_hard(x, y, w, h, rad, ring, 255u);
-    ir = rad > 1u ? rad - 1u : 0u;
-    if (w > 2u && h > 2u) {
-        draw_round_fill_hard(x + 1u, y + 1u, w - 2u, h - 2u, ir, THEME_GLASS, 255u);
-    }
+    draw_round_fill_hard(x, y, w, h, rad, THEME_GLASS, 255u);
+    draw_edge_lines(x, y, w, h, rad, ring);
 }
 
 void draw_window_close_rect(u32 x, u32 y, u32 w, u32 *cx, u32 *cy, u32 *cs)
@@ -1154,7 +1158,6 @@ void draw_window_frame(u32 x, u32 y, u32 w, u32 h, const char *title,
                        enum ui_icon icon, bool focused, bool close_hot)
 {
     u32 rad = THEME_RAD_WIN;
-    u32 ir = rad > 1u ? rad - 1u : 0u;
     u32 bar = TITLEBAR_H;
     u32 cx;
     u32 cy;
@@ -1176,13 +1179,11 @@ void draw_window_frame(u32 x, u32 y, u32 w, u32 h, const char *title,
     }
 
     draw_surface(x, y, w, h, rad, focused);
-    draw_round_fill_hard(x + 1u, y + 1u, w - 2u, bar > 1u ? bar - 1u : bar, ir,
-                         head, 255u);
+    draw_round_fill_hard(x, y, w, bar, rad, head, 255u);
     if (bar > 2u) {
-        fb_fill_rect(x + 1u, y + bar / 2u, w > 2u ? w - 2u : w, bar / 2u, head.r,
-                     head.g, head.b);
+        fb_fill_rect(x, y + bar / 2u, w, bar - bar / 2u, head.r, head.g, head.b);
     }
-    fb_fill_rect(x + 1u, y + bar, w > 2u ? w - 2u : w, 1u,
+    fb_fill_rect(x, y + bar, w, 1u,
                  (focused ? THEME_BORDER : THEME_GRID).r,
                  (focused ? THEME_BORDER : THEME_GRID).g,
                  (focused ? THEME_BORDER : THEME_GRID).b);
