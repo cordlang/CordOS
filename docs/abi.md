@@ -72,6 +72,18 @@ Console fds `0` (keyboard) and `1` (VGA) are not the vfs table. `SYS_OPEN`
 returns a raw vfs fd (`0`–7); `SYS_READ`/`SYS_WRITE` do not multiplex those
 yet.
 
+## Limits (this is the ABI as implemented)
+
+Canonical open work: [`ROADMAP.md`](ROADMAP.md). Do not read this table as
+“mmap / userland done”.
+
+- No `spawn`/`exec` (syscall 8+). The smoke ELF is launched by the kernel.
+- `mmap` `prot` is ignored: pages are left writable. That is Fase 17 (W^X),
+  not a finished mmap.
+- `read`/`write` do not use the fds returned by `open`/`close`.
+- Login password hashing is not part of this ABI. It is FNV-1a + pepper
+  (`src/fs/userdb.c`), not a KDF — before “usuarios reales”.
+
 ## Kernel C API
 
 ```c
