@@ -16,6 +16,9 @@ struct task {
     u64 *kstack_top;
     void *kstack_base;
     const char *name;
+    /* Ring-3 image (0 if this task is kernel-only). Set before READY. */
+    u64 user_rip;
+    u64 user_rsp;
 };
 
 #define TASK_MAX_OS 16u
@@ -27,6 +30,8 @@ extern volatile u32 tasks_ready_os;
 
 void task_init(void);
 u32 task_create(void (*entry)(void), const char *name);
+/* Like task_create, but stores user_rip/user_rsp before the task is READY. */
+u32 task_create_user(void (*entry)(void), const char *name, u64 rip, u64 rsp);
 
 /* Strong defs in task.c — override F5 weak stubs for SYS_YIELD / SYS_GETPID. */
 struct task *task_current(void);

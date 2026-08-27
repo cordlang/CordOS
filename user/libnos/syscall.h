@@ -12,6 +12,8 @@
 #define SYS_MMAP   5
 #define SYS_OPEN   6
 #define SYS_CLOSE  7
+#define SYS_SPAWN  8
+#define SYS_EXEC   9
 
 #define PROT_READ  1
 #define PROT_WRITE 2
@@ -25,5 +27,7 @@ long nos_getpid(void);
 long nos_mmap(void *hint, unsigned long len, long prot);
 long nos_open(const char *path);
 long nos_close(long fd);
+long nos_spawn(const char *path);
+long nos_exec(const char *path);
 
 #endif

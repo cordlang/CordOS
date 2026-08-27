@@ -37,7 +37,7 @@ en el mismo `cordos.bin`.
 | CPU / IRQ | GDT, IDT, PIC, PIT, PS/2 teclado+ratón | APIC / IPI no |
 | Memoria | PMM, VMM, heap, kselftest al boot | Sin COW ni demand paging |
 | Tareas | `task` + `switch_context` + yield; preempt ON en código (`schedule()` desde IRQ0) | **Falta confirmar PS/2 teclado/ratón en VirtualBox** |
-| Syscalls | `int 0x80`, números 0–7, copy user exige `PAGE_USER` | `mmap` = bump anónimo; **`prot` se ignora** (páginas quedan W). `read`/`write` no multiplexan fds VFS (0/1 = teclado/VGA) |
+| Syscalls | `int 0x80`, números 0–9, copy user exige `PAGE_USER` | `mmap` bump; `prot` R/W y W^X en la hoja (NX hw abierto). `read`/`write` multiplexan fds VFS (≥2); spawn/exec cargan ELF |
 | FS | VFS, NosFS, initrd, disco AHCI/IDE | Persistencia real, no truco de VBox |
 | Shell | Kernel-mode, ES/EN, F1 emergencia | No es un proceso usuario |
 | UI | Idioma → splash → onboarding/login → desktop | Apps del dock = código kernel (ring 0) |
@@ -51,8 +51,10 @@ syscalls → FS → shell → boot BIOS opcional → devices stub → SMP stub �
 docs). El contrato [`phases/PHASES_4_11_CONTRACT.md`](phases/PHASES_4_11_CONTRACT.md)
 es histórico.
 
-**Parcial:** Fase 12 (falta `LICENSE`). Fase 13 (ELF smoke hecho; `spawn` no;
-`mmap` no honra `prot`). Fase 14 (preempt en código; falta VBox).
+**Parcial:** Fase 12 (falta `LICENSE`). Fase 13 (ELF + `spawn`/`exec`; un image
+window). Fase 14 (preempt en código; falta VBox). Fase 15 (fds VFS en
+read/write; Terminal del dock sigue ring 0). Fase 17 (hoja `prot`/W^X en
+`sys_mmap`; NX hw y flags ELF PT_LOAD abiertos).
 
 ---
 
@@ -61,9 +63,9 @@ es histórico.
 Cuando haya conflicto de tiempo, este orden gana:
 
 1. **P0 — No romper el producto.** `make` + `.\run-vbox.ps1` llega a login/desktop. Serial en `out/serial.log`.
-2. **P1 — Userland de verdad.** `user_hello.elf` ya escribe y sale (lo lanza el kernel). Falta `spawn`/`exec` y la Terminal del dock en ring 3.
-3. **P2 — El kernel como kernel.** Confirmar preempt + PS/2 en VirtualBox; `spawn`/`exec`; `read`/`write` sobre fds VFS.
-4. **P3 — Disco y ABI sin inflar.** Persistencia y loader ELF ya existen. fds VFS siguen abiertos (Fase 15). **`mmap` no está “hecho”:** `prot` se ignora.
+2. **P1 — Userland de verdad.** `user_hello.elf` ya escribe y sale (`SYS_SPAWN`). Falta la Terminal del dock en ring 3.
+3. **P2 — El kernel como kernel.** Confirmar preempt + PS/2 en VirtualBox.
+4. **P3 — Disco y ABI sin inflar.** Persistencia, loader ELF, spawn y fds VFS ya existen. **NX / flags ELF** siguen abiertos (Fase 17).
 5. **P4 — Autonomía.** Bootloader propio como camino documentado. **Hoy el default sigue siendo GRUB.**
 6. **P5 — Escala.** SMP AP, red usable, W^X / SMAP, vsync / modo juego ([`VISUAL_ROADMAP.md`](VISUAL_ROADMAP.md)).
 
@@ -120,28 +122,30 @@ Dependencia: no saltar a 18 (SMP) sin 14 (preempt estable en VBox).
 
 ### Fase 13 — Un proceso ring 3 de verdad
 **Prioridad:** P1  
-**Estado:** hecho el criterio de ELF; `spawn`/`exec` sigue abierto (Fase 15). `mmap` no está cerrado (Fase 17).
+**Estado:** ELF + `SYS_SPAWN`/`SYS_EXEC` (8/9). Un solo image window (sin CR3 por proceso).
 
 `user_hello.elf` (linkado en `0x40000000`) se embebe en el kernel. Tras el
-scheduler, `user_smoke()` lo carga, entra con `iretq`, hace `write`+`exit`.
-El trampoline a mano queda de fallback.
+scheduler, `user_smoke()` lo lanza con `SYS_SPAWN` (blob), entra con `iretq`,
+hace `write`+`exit`. `SYS_MMAP` asigna páginas `PAGE_USER` desde `0x41000000`.
+El trampoline a mano queda de fallback. Un path VFS o `NULL`/`hello` carga
+el mismo loader (`elf64_load`).
 
-`SYS_MMAP` asigna páginas `PAGE_USER` desde `0x41000000` (bump anónimo,
-siempre `PAGE_WRITE`). **`prot` se ignora** (`(void)prot` en `sys_mmap`).
-Eso no es “mmap hecho”: es un allocator. W^X / `prot` → Fase 17.
+`sys_mmap` honra `PROT_WRITE` en la hoja y rechaza W+X. NX (EFER.NXE) y
+`ph->flags` de ELF siguen en Fase 17.
 
 | Módulo | Piezas | Notas |
 |---|---|---|
-| `mmap` bump | `SYS_MMAP` anónimo, writable | Hecho como bump. **`prot` ignorado** |
-| Loader | ELF64 ET_EXEC x86_64 | `src/proc/elf64.c` — PT_LOAD también se mapea W (`ph->flags` ignorado) |
-| `spawn` / `exec` | Syscall nueva (8+) | Pendiente — hoy lo lanza el kernel (Fase 15) |
-| libc user | `user/libnos` | `write`/`exit` |
+| `mmap` bump | `SYS_MMAP` anónimo | Hecho. Hoja R/W + W^X en `sys_mmap` |
+| Loader | ELF64 ET_EXEC x86_64 | `src/proc/elf64.c` — PT_LOAD aún se mapea W |
+| `spawn` / `exec` | Syscalls 8 y 9 | Hecho — un ELF ring-3 a la vez |
+| libc user | `user/libnos` | `write`/`exit`/`spawn`/`exec` |
 | Aislamiento | Fault CPL3 mata la tarea | `page_fault.c` |
 
 **Hecho cuando (criterio ELF, ya cumplido):** `user_hello.elf` hace `write`+`exit`
-y el desktop sigue, lanzado por el kernel.
+y el desktop sigue, lanzado por `SYS_SPAWN`.
 
-**No es criterio de esta fase:** honrar `prot`, W^X, ni `spawn` como syscall.
+**No es criterio de esta fase:** NX hardware, `ph->flags` ELF, ni la Terminal
+del dock en ring 3.
 
 ---
 
@@ -165,23 +169,22 @@ ratón PS/2 en VirtualBox con preempt ON. QEMU serial no sustituye esa prueba.
 
 ### Fase 15 — Apps del dock en userland
 **Prioridad:** P2  
-**Estado:** abierta  
+**Estado:** abierta (syscalls de spawn/fds hechas; el dock sigue ring 0)  
 **Dependencias:** 13 (ELF) + 14 (preempt usable)
 
-Hoy: `open`/`close` hablan con la tabla VFS; `read`/`write` **no**. fd 0 es
-teclado, fd 1 es VGA+serial. No hay syscall `spawn`/`exec`. Archivos, Terminal,
-Ajustes y Acerca de son funciones del kernel (ring 0).
+`open` reserva fds ≥ 2. `read`/`write` multiplexan esos fds (0 = teclado,
+1 = VGA+serial). `SYS_SPAWN` / `SYS_EXEC` cargan un ELF. Archivos, Terminal,
+Ajustes y Acerca de siguen siendo funciones del kernel (ring 0).
 
 | Pieza | Qué hacer | Hoy |
 |---|---|---|
-| `read` / `write` | Multiplexar fds VFS (los que devuelve `open`) | Solo 0/1 = teclado/VGA; otro fd → `-1` |
-| `spawn` / `exec` | Syscall nueva (8+) que cargue un ELF y lo deje ring 3 | `user_smoke()` en el kernel |
+| `read` / `write` | Multiplexar fds VFS (los que devuelve `open`) | **Hecho** (`fd>=2`) |
+| `spawn` / `exec` | Syscalls 8 y 9 | **Hecho** — un ELF ring-3 a la vez |
 | Terminal | El builtin del dock lanza un proceso, no `shell_run()` en ring 0 | Ring 0 |
 | Compositor | Superficie por proceso **o** un servidor gráfico mínimo | Un paso; no Wayland |
 | Fallback | F1 sigue siendo shell kernel | Válvula de escape |
 
-**Hecho cuando:** un `spawn`/`exec` lanza un ELF; `read`/`write` operan sobre
-fds VFS (no solo 0/1); Archivos o Terminal sobreviven a un kill del proceso;
+**Hecho cuando:** Archivos o Terminal sobreviven a un kill del proceso;
 logout no requiere reboot. El dock deja de ser “todo ring 0” para esa app.
 
 ---
@@ -209,7 +212,7 @@ la palabra experimental, y el desktop es el mismo.
 
 | Pieza | Hoy | Notas |
 |---|---|---|
-| `mmap` `prot` | **Ignorado.** Páginas siempre `PAGE_WRITE` | Hueco de seguridad. No es “mmap hecho” |
+| `mmap` `prot` | Hoja R/W + W+X → `-1` en `sys_mmap` | NX (EFER.NXE) y ELF `PT_LOAD` flags siguen abiertos |
 | W^X | ELF PT_LOAD también se mapea W (`ph->flags` ignorado) | Páginas no W+X en kernel y user |
 | Demand paging / COW | Un fault CPL3 mata la tarea | — |
 | SMAP / UMIP | No | Si el CPU guest lo ofrece |
@@ -217,8 +220,8 @@ la palabra experimental, y el desktop es el mismo.
 
 **Hecho cuando:**
 
-- `mmap(..., prot)` deja páginas según `prot` (R/W/X); no quedan W por defecto.
-- Un programa user no puede ejecutar páginas W ni escribir páginas X (W^X).
+- `mmap(..., prot)` deja páginas según `prot` (R/W); W+X es `-1`. **NX hardware
+  y flags ELF PT_LOAD** siguen abiertos.
 - Un programa user no puede leer identity kernel; [`abi.md`](abi.md) describe el modelo.
 - Nadie llama “usuarios reales” al login mientras el secreto sea FNV-1a + pepper.
   El reemplazo es un KDF de verdad (el autor elige cuál). Este roadmap no finge
@@ -261,18 +264,17 @@ Page-flip en el LFB de VBox **no** es el camino; ya se intentó.
 | # | Hito | Fase | Pri |
 |---|---|---|---|
 | 1 | `LICENSE` en la raíz (el autor elige SPDX; no inventar el archivo) | 12 | P0 — **abierto** |
-| 2 | Cargar y correr `user_hello.elf` desde el kernel | 13 | P1 — **hecho** |
-| 3 | `SYS_MMAP` bump anónimo `PAGE_USER` | 13 | P1 — **hecho el bump**; `prot` ignorado → hito 6 |
+| 2 | Cargar y correr `user_hello.elf` | 13 | P1 — **hecho** (`SYS_SPAWN`) |
+| 3 | `SYS_MMAP` bump anónimo `PAGE_USER` | 13 | P1 — **hecho el bump**; hoja `prot` en árbol; NX → hito 6 |
 | 4 | Confirmar preempt IRQ0 + PS/2 teclado/ratón en **VirtualBox** | 14 | P2 — código ON; **falta VBox** |
-| 5 | `read`/`write` sobre fds VFS; `spawn`/`exec` como syscall | 15 | P2 |
-| 6 | Honrar `mmap` `prot` + W^X (páginas no quedan W) | 17 | P2 seguridad / P5 fase |
+| 5 | `read`/`write` sobre fds VFS; `spawn`/`exec` como syscall | 15 | P2 — **hecho** (Terminal dock sigue ring 0) |
+| 6 | NX / flags ELF PT_LOAD (W^X hardware) | 17 | P2 seguridad / P5 fase |
 | 7 | Terminal del dock = proceso ring 3 | 15 | P2 |
 | 8 | V1: reloj `dt` **o** boot sin GRUB como default documentado **o** `-smp 2` real | 19 / 16 / 18 | P4–P5 |
 
 Siguiente código: **hito 4** (confirmar preempt en VBox: teclado y ratón PS/2),
-luego **hito 5** (`spawn` + fds VFS). El **hito 6** (W^X / `prot`) es el hueco
-de seguridad de mmap: no se trata el bump como “mmap hecho”. El desktop sigue
-siendo ring 0 hasta la Fase 15.
+luego **hito 7** (Terminal del dock en ring 3). El desktop sigue siendo ring 0
+hasta esa pieza de Fase 15.
 
 ---
 
@@ -308,8 +310,8 @@ ISO: `dist/cordos.iso`. Intermedios: `out/`.
 | Arch principal | **x86_64**. i386 = demo | — |
 | Boot de desarrollo | GRUB + VBox (**sigue siendo el default**) | ¿BIOS o UEFI como default de producto? |
 | FS | NosFS + initrd overlay | Layout on-disk a largo plazo |
-| Ejecutables | ELF64 subset primero (`user_hello.elf`) | `spawn`/`exec` syscall; `.nos` después |
-| `mmap` | Bump anónimo `PAGE_USER` | **`prot` ignorado** — W^X (Fase 17) |
+| Ejecutables | ELF64 + `spawn`/`exec` (un image window) | CR3 por proceso; `.nos` después |
+| `mmap` | Bump anónimo; hoja `prot` / W^X en `sys_mmap` | NX hw y flags ELF PT_LOAD (Fase 17) |
 | GUI | Compositor 2D propio; no GTK/Qt | Servidor gráfico vs blit in-process; dock aún ring 0 |
 | Red | Detectar virtio / WLAN host | Stack IP en guest (detectar ≠ producto) |
 | SMP | 1 CPU de verdad (stub) | AP + IPI |
@@ -328,10 +330,10 @@ Actualizar esta tabla al cerrar una fila.
 | Kernel interactivo | Teclado + timer + excepciones | Sí |
 | Kernel con memoria | Heap + paginación | Sí |
 | Producto gráfico | Login → desktop en VBox | Sí |
-| Un ELF ring 3 | `write`+`exit` y el desktop sigue | Sí (lanzado por el kernel; sin `spawn`) |
-| `mmap` usable | Anónimo **y** `prot` honrado / W^X | Bump sí; **`prot` no** |
+| Un ELF ring 3 | `write`+`exit` y el desktop sigue | Sí (`SYS_SPAWN`; un image window) |
+| `mmap` usable | Anónimo **y** hoja `prot` / W^X | Bump sí; hoja sí; **NX hw no** |
 | Kernel multiproceso | Switch **y** preempt usable en VBox | Switch sí; preempt ON en código (**confirmar PS/2**) |
-| Sistema usable | Programas usuario + archivos por fds | Archivos sí; spawn/fds/dock no |
+| Sistema usable | Programas usuario + archivos por fds | spawn/fds sí; dock Terminal no |
 | Usuarios reales | KDF, no FNV-1a + pepper | No |
 | Sistema autónomo | Arranque propio + instalable | No (GRUB default) |
 | Sistema serio | SMP + red + W^X | No |
@@ -354,10 +356,12 @@ Actualizar esta tabla al cerrar una fila.
 
 ## 11. Resumen
 
-**0–11 están hechas.** Fase 13 dejó un ELF ring 3 que el **kernel** lanza;
-eso no es userland de producto. El hueco que sigue es: **¿preempt convive con
-PS/2 en VirtualBox?** y después **¿puede un programa que no es el kernel
-nacer por `spawn`, hablar por fds VFS, romperse y dejar el escritorio en pie?**
+**0–11 están hechas.** Fase 13 dejó un ELF ring 3 que nace por `SYS_SPAWN`.
+Eso no es userland de producto: un solo image window, dock aún ring 0. El
+hueco que sigue es: **¿preempt convive con PS/2 en VirtualBox?** y después
+**¿puede la Terminal del dock ser un proceso, romperse y dejar el escritorio
+en pie?**
 
-`mmap` anónimo no cierra memoria: **`prot` se ignora**. FNV-1a no cierra
-usuarios. GRUB sigue siendo el default. SMP y red siguen en stub / detect.
+`sys_mmap` honra la hoja `prot` y rechaza W+X; **NX hardware** sigue abierto.
+FNV-1a no cierra usuarios. GRUB sigue siendo el default. SMP y red siguen
+en stub / detect.

@@ -8,6 +8,8 @@ ssize_t vfs_read(int fd, void *buf, size_t len);
 ssize_t vfs_write(int fd, const void *buf, size_t len);
 int vfs_create(const char *path);
 int vfs_close(int fd);
+/* Size of an open file. Console fds 0/1 are not in this table. */
+int vfs_size(int fd, u32 *out);
 
 /* Close FDs opened by pid. pid 0 (idle/kernel) is ignored. */
 void vfs_close_task(u32 pid);

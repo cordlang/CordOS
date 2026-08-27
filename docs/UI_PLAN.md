@@ -1,7 +1,7 @@
 # CordOS — Plan de UI (arranque → home → sistema)
 
 Documento de UX (viaje splash → login → Home). El plan de **kernel y userland**
-está en [`ROADMAP.md`](ROADMAP.md) (canónico: 0–11 cerradas; 13 ELF hecho, spawn no). Motion / frame time:
+está en [`ROADMAP.md`](ROADMAP.md) (canónico: 0–11 cerradas; 13 ELF + spawn). Motion / frame time:
 [`VISUAL_ROADMAP.md`](VISUAL_ROADMAP.md).
 
 **Estado:** Ola 0 (texto) y **Ola 1 (login/home con framebuffer) hechas.** El

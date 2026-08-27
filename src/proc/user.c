@@ -1,11 +1,13 @@
 #include "user.h"
 #include "elf64.h"
 #include "gdt.h"
+#include "heap.h"
 #include "isr.h"
 #include "pmm.h"
 #include "serial.h"
 #include "string.h"
 #include "task.h"
+#include "vfs.h"
 #include "vmm.h"
 
 extern const u8 user_hello_elf_start[];
@@ -19,8 +21,186 @@ static const char user_hello[] = "r3\n";
 static u64 user_text_va;
 static u64 user_stack_va;
 static u32 user_smoke_pid;
-static u64 user_elf_rip;
-static u64 user_elf_rsp;
+
+static int path_eq(const char *a, const char *b)
+{
+    if (a == NULL || b == NULL) {
+        return 0;
+    }
+    while (*a != '\0' && *a == *b) {
+        a++;
+        b++;
+    }
+    return *a == *b;
+}
+
+static int path_is_blob(const char *path)
+{
+    if (path == NULL || path[0] == '\0') {
+        return 1;
+    }
+    if (path[0] == '/') {
+        path++;
+    }
+    return path_eq(path, "hello");
+}
+
+static const char *path_task_name(const char *path)
+{
+    if (path_is_blob(path)) {
+        return "hello";
+    }
+    return "elf";
+}
+
+static int user_window_busy(u32 except_pid)
+{
+    u32 i;
+
+    for (i = 1; i < TASK_MAX_OS; i++) {
+        if (task_table_os[i].state == TASK_DEAD) {
+            continue;
+        }
+        if (task_table_os[i].pid == except_pid) {
+            continue;
+        }
+        if (task_table_os[i].user_rip != 0) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static int user_load_blob(const void *blob, u32 size, u64 *entry, u64 *stack)
+{
+    if (blob == NULL || size == 0 || entry == NULL || stack == NULL) {
+        return -1;
+    }
+    return elf64_load(blob, size, entry, stack);
+}
+
+static int user_load_vfs(const char *path, u64 *entry, u64 *stack)
+{
+    int fd;
+    u32 size;
+    u8 *buf;
+    ssize_t got;
+    ssize_t n;
+    int rc;
+
+    fd = vfs_open(path);
+    if (fd < 0) {
+        return -1;
+    }
+    if (vfs_size(fd, &size) < 0 || size == 0 || size > ELF_LOAD_MAX) {
+        vfs_close(fd);
+        return -1;
+    }
+    buf = (u8 *)kmalloc(size);
+    if (buf == NULL) {
+        vfs_close(fd);
+        return -1;
+    }
+    got = 0;
+    while ((u32)got < size) {
+        n = vfs_read(fd, buf + got, size - (u32)got);
+        if (n < 0) {
+            kfree(buf);
+            vfs_close(fd);
+            return -1;
+        }
+        if (n == 0) {
+            break;
+        }
+        got += n;
+    }
+    vfs_close(fd);
+    rc = user_load_blob(buf, (u32)got, entry, stack);
+    kfree(buf);
+    return rc;
+}
+
+static int user_load_path(const char *path, u64 *entry, u64 *stack)
+{
+    if (path_is_blob(path)) {
+        u32 elf_size;
+
+        elf_size = (u32)(user_hello_elf_end - user_hello_elf_start);
+        return user_load_blob(user_hello_elf_start, elf_size, entry, stack);
+    }
+    return user_load_vfs(path, entry, stack);
+}
+
+static void user_spawn_task(void)
+{
+    struct task *t = task_current();
+
+    if (t == NULL || t->user_rip == 0) {
+        task_exit();
+        return;
+    }
+    user_enter(t->user_rip, t->user_rsp);
+    task_exit();
+}
+
+u32 user_spawn_elf(const void *blob, u32 size, const char *name)
+{
+    u64 entry;
+    u64 stack;
+
+    if (user_window_busy(0)) {
+        serial_write("spawn: user window busy\n");
+        return 0;
+    }
+    if (user_load_blob(blob, size, &entry, &stack) != 0) {
+        return 0;
+    }
+    return task_create_user(user_spawn_task, name != NULL ? name : "elf",
+                            entry, stack);
+}
+
+u32 user_spawn_path(const char *path)
+{
+    u64 entry;
+    u64 stack;
+
+    if (user_window_busy(0)) {
+        serial_write("spawn: user window busy\n");
+        return 0;
+    }
+    if (user_load_path(path, &entry, &stack) != 0) {
+        return 0;
+    }
+    return task_create_user(user_spawn_task, path_task_name(path),
+                            entry, stack);
+}
+
+int user_exec_path(const char *path, u64 *entry_out, u64 *stack_out)
+{
+    struct task *t = task_current();
+    u32 except = (t != NULL) ? t->pid : 0;
+    u64 entry;
+    u64 stack;
+
+    if (user_window_busy(except)) {
+        serial_write("exec: user window busy\n");
+        return -1;
+    }
+    if (user_load_path(path, &entry, &stack) != 0) {
+        return -1;
+    }
+    if (t != NULL) {
+        t->user_rip = entry;
+        t->user_rsp = stack;
+    }
+    if (entry_out != NULL) {
+        *entry_out = entry;
+    }
+    if (stack_out != NULL) {
+        *stack_out = stack;
+    }
+    return 0;
+}
 
 static u8 *emit8(u8 *p, u8 b)
 {
@@ -163,12 +343,6 @@ __attribute__((noinline)) void user_enter(u64 rip, u64 rsp)
     __builtin_unreachable();
 }
 
-static void user_elf_task(void)
-{
-    user_enter(user_elf_rip, user_elf_rsp);
-    task_exit();
-}
-
 static void user_smoke_task(void)
 {
     user_enter(user_text_va, user_stack_va + PAGE_SIZE);
@@ -191,17 +365,10 @@ static bool user_pid_dead(u32 pid)
 void user_smoke(void)
 {
     u16 cs;
-    u32 elf_size;
 
-    elf_size = (u32)(user_hello_elf_end - user_hello_elf_start);
-    if (elf64_load(user_hello_elf_start, elf_size, &user_elf_rip,
-                   &user_elf_rsp) == 0) {
+    user_smoke_pid = user_spawn_path(NULL);
+    if (user_smoke_pid != 0) {
         serial_write("phase13: entering elf user\n");
-        user_smoke_pid = task_create(user_elf_task, "hello");
-        if (user_smoke_pid == 0) {
-            serial_write("phase13: elf task create failed\n");
-            return;
-        }
         while (!user_pid_dead(user_smoke_pid)) {
             task_yield();
         }
