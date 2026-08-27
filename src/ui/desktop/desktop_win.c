@@ -353,14 +353,14 @@ void settings_lang_btn(u32 bx, u32 lang_y, u32 i, u32 *x, u32 *y)
 void act_layout(const struct window *w, u32 *lx, u32 *ly, u32 *lw, u32 *rh,
                 u32 *rgap, u32 *dx, u32 *dy, u32 *dw, u32 *dh)
 {
-    u32 pad = 14u;
-    u32 gap = 12u;
+    u32 pad = 16u;
+    u32 gap = 16u;
     u32 bx = (u32)w->x;
     u32 by = (u32)w->y;
-    u32 body_y = by + TITLE_H + 10u;
-    u32 body_h = w->h > TITLE_H + 24u ? w->h - TITLE_H - 16u : 80u;
-    u32 list_w = 268u;
-    u32 row_gap = 6u;
+    u32 body_y = by + TITLE_H + 14u;
+    u32 body_h = w->h > TITLE_H + 32u ? w->h - TITLE_H - 28u : 80u;
+    u32 list_w = 250u;
+    u32 row_gap = 8u;
     u32 row_h;
 
     if (w->w < pad * 2u + gap + 420u) {
@@ -410,37 +410,26 @@ static void cat(char *dst, u32 max, const char *src)
 
 static void draw_segments(u32 x, u32 y, u32 w, u32 h, u32 pct, struct rgb fill)
 {
-    u32 n = 22u;
-    u32 gap = 3u;
-    u32 seg;
-    u32 on;
-    u32 i;
+    u32 filled;
 
-    if (w < 40u || h < 4u) {
+    if (w < 12u || h < 4u) {
         return;
     }
     if (pct > 100u) {
         pct = 100u;
     }
-    seg = (w - (n - 1u) * gap) / n;
-    if (seg < 3u) {
-        n = w / 6u;
-        if (n < 4u) {
-            n = 4u;
-        }
-        gap = 2u;
-        seg = (w - (n - 1u) * gap) / n;
-        if (seg < 2u) {
-            return;
-        }
+    draw_round_fill_hard(x, y, w, h, h / 2u, THEME_GRID, 255u);
+    if (pct == 0u) {
+        return;
     }
-    on = (pct * n + 50u) / 100u;
-    for (i = 0; i < n; i++) {
-        struct rgb c = i < on ? fill : THEME_GRID;
-        u32 sx = x + i * (seg + gap);
-
-        draw_round_fill_hard(sx, y, seg, h, h > 4u ? 2u : 1u, c, 255u);
+    filled = (pct * w) / 100u;
+    if (filled < h) {
+        filled = h;
     }
+    if (filled > w) {
+        filled = w;
+    }
+    draw_round_fill_hard(x, y, filled, h, h / 2u, fill, 255u);
 }
 
 static void draw_spark(u32 x, u32 y, u32 w, u32 h, const u8 *hist, struct rgb col)
@@ -451,20 +440,23 @@ static void draw_spark(u32 x, u32 y, u32 w, u32 h, const u8 *hist, struct rgb co
     if (w < SYSMON_HIST || h < 8u || hist == NULL) {
         return;
     }
+    draw_round_fill_hard(x, y, w, h, 5u, THEME_BG2, 255u);
     cw = w / SYSMON_HIST;
     if (cw < 1u) {
         cw = 1u;
     }
     for (i = 0; i < SYSMON_HIST; i++) {
-        u32 bh = ((u32)hist[i] * (h - 2u)) / 100u;
+        u32 bh = ((u32)hist[i] * (h - 4u)) / 100u;
         u32 bx = x + i * cw;
         u32 by;
 
-        if (bh < 2u) {
-            bh = 2u;
+        if (bh == 0u) {
+            continue;
         }
-        by = y + h - bh;
-        fb_fill_rect(bx, by, cw > 1u ? cw - 1u : cw, bh, col.r, col.g, col.b);
+        by = y + h - 2u - bh;
+        fb_blend_rect(bx, by, cw > 1u ? cw - 1u : cw, bh,
+                      col.r, col.g, col.b, 120u);
+        fb_fill_rect(bx, by, cw > 1u ? cw - 1u : cw, 1u, col.r, col.g, col.b);
     }
 }
 
@@ -472,41 +464,56 @@ static void draw_area(u32 x, u32 y, u32 w, u32 h, const u8 *hist, struct rgb col
 {
     u32 i;
     u32 cw;
-    u32 gap = 1u;
+    u32 inset = 14u;
+    u32 base;
 
-    if (w < 24u || h < 20u || hist == NULL) {
+    if (w < 48u || h < 48u || hist == NULL) {
         return;
     }
-    draw_round_fill_hard(x, y, w, h, 10u, THEME_FIELD, 255u);
+    draw_round_fill_hard(x, y, w, h, 12u, THEME_BG2, 255u);
+    fb_blend_rect(x + 1u, y + 1u, w > 2u ? w - 2u : w, 1u,
+                  col.r, col.g, col.b, 170u);
     for (i = 1u; i < 4u; i++) {
         u32 gy = y + (h * i) / 4u;
 
-        fb_blend_rect(x + 6u, gy, w > 12u ? w - 12u : w, 1u, THEME_BORDER.r,
+        fb_blend_rect(x + inset, gy, w > inset * 2u ? w - inset * 2u : w, 1u,
+                      THEME_BORDER.r,
                       THEME_BORDER.g, THEME_BORDER.b, 70u);
     }
-    cw = w / SYSMON_HIST;
-    if (cw < 2u) {
-        cw = 2u;
-        gap = 0u;
+    cw = (w > inset * 2u) ? (w - inset * 2u) / SYSMON_HIST : 1u;
+    if (cw < 1u) {
+        cw = 1u;
     }
+    base = y + h - 8u;
     for (i = 0; i < SYSMON_HIST; i++) {
-        u32 bh = ((u32)hist[i] * (h - 6u)) / 100u;
-        u32 bx = x + 4u + i * cw;
-        u32 bw = cw > gap ? cw - gap : cw;
+        u32 bh = ((u32)hist[i] * (h - 16u)) / 100u;
+        u32 bx = x + inset + i * cw;
+        u32 bw = cw > 1u ? cw - 1u : cw;
         u32 by;
 
-        if (bx + bw > x + w - 4u) {
-            if (x + w <= bx + 4u) {
+        if (bx + bw > x + w - inset) {
+            if (x + w <= bx + inset) {
                 break;
             }
-            bw = x + w - 4u - bx;
+            bw = x + w - inset - bx;
         }
-        if (bh < 2u) {
-            bh = 2u;
+        if (bh == 0u) {
+            continue;
         }
-        by = y + h - 4u - bh;
-        fb_blend_rect(bx, by, bw, bh, col.r, col.g, col.b, 96u);
+        by = base - bh;
+        fb_blend_rect(bx, by, bw, bh, col.r, col.g, col.b, 105u);
         fb_fill_rect(bx, by, bw, 2u, col.r, col.g, col.b);
+    }
+    {
+        u32 bh = ((u32)hist[SYSMON_HIST - 1u] * (h - 16u)) / 100u;
+        u32 px = x + inset + (SYSMON_HIST - 1u) * cw;
+        u32 py = base - bh;
+
+        if (px + 2u < x + w) {
+            fb_fill_rect(px, y + 8u, 2u, base - y - 8u, col.r, col.g, col.b);
+            draw_round_fill_hard(px > 2u ? px - 2u : 0u, py > 2u ? py - 2u : 0u,
+                                 6u, 6u, 3u, col, 255u);
+        }
     }
 }
 
@@ -517,16 +524,24 @@ static void draw_pill(u32 x, u32 y, u32 w, u32 h, const char *text, struct rgb d
     if (w < 20u || h < 16u) {
         return;
     }
-    draw_round_fill_hard(x, y, w, h, h / 2u, THEME_TITLE, 255u);
-    draw_round_fill_hard(x + 8u, y + (h / 2u) - 4u, 8u, 8u, 4u, dot, 255u);
+    draw_round_fill_hard(x, y, w, h, h / 2u, THEME_BG2, 255u);
+    fb_blend_rect(x + 1u, y + 1u, w > 2u ? w - 2u : w, 1u,
+                  dot.r, dot.g, dot.b, 130u);
+    draw_round_fill_hard(x + 8u, y + (h / 2u) - 3u, 6u, 6u, 3u, dot, 255u);
     ty = y + (h > FONT_HEIGHT ? (h - FONT_HEIGHT) / 2u : 0u);
     draw_text_clip(x + 22u, ty, x + w - 8u, text, THEME_FG, 1);
 }
 
-static void draw_kv(u32 x, u32 y, u32 col_w, const char *k, const char *v)
+static void draw_kv(u32 x, u32 y, u32 w, u32 h, const char *k, const char *v,
+                    struct rgb col)
 {
-    draw_text_clip(x, y, x + col_w - 4u, k, THEME_FG_DIM, 1);
-    draw_text_clip(x, y + FONT_LINE - 10u, x + col_w - 4u, v, THEME_FG, 1);
+    if (w < 24u || h < FONT_LINE) {
+        return;
+    }
+    draw_round_fill_hard(x, y, w, h, 10u, THEME_BG2, 255u);
+    fb_fill_rect(x + 10u, y + 8u, 3u, h > 16u ? h - 16u : h, col.r, col.g, col.b);
+    draw_text_clip(x + 20u, y + 8u, x + w - 8u, k, THEME_FG_DIM, 1);
+    draw_text_clip(x + 20u, y + h - FONT_HEIGHT - 6u, x + w - 8u, v, THEME_FG, 1);
 }
 
 static const char *task_state_txt(enum task_state st)
@@ -544,10 +559,11 @@ static void draw_task_rows(u32 x, u32 y, u32 w, u32 max_rows, struct rgb col)
 {
     u32 i;
     u32 shown = 0;
-    u32 row_h = FONT_LINE - 4u;
+    u32 row_h = FONT_LINE + 2u;
 
     draw_text(x, y, i18n(MSG_ACT_KTASKS), THEME_FG_DIM, 1);
-    y += FONT_LINE - 8u;
+    fb_blend_rect(x, y + FONT_LINE - 3u, w, 1u, col.r, col.g, col.b, 120u);
+    y += FONT_LINE + 4u;
     for (i = 0; i < TASK_MAX_OS && shown < max_rows; i++) {
         const char *name;
         u32 ny;
@@ -560,9 +576,10 @@ static void draw_task_rows(u32 x, u32 y, u32 w, u32 max_rows, struct rgb col)
             name = "?";
         }
         ny = y + shown * row_h;
-        draw_round_fill_hard(x, ny + 8u, 6u, 6u, 3u, col, 255u);
-        draw_text_clip(x + 12u, ny, x + w / 2u, name, THEME_FG, 1);
-        draw_text_clip(x + w / 2u, ny, x + w - 4u,
+        draw_round_fill_hard(x, ny, w, FONT_LINE - 2u, 8u, THEME_BG2, 255u);
+        draw_round_fill_hard(x + 10u, ny + 9u, 6u, 6u, 3u, col, 255u);
+        draw_text_clip(x + 24u, ny + 2u, x + w / 2u, name, THEME_FG, 1);
+        draw_text_clip(x + w / 2u, ny + 2u, x + w - 10u,
                        task_state_txt(task_table_os[i].state), THEME_FG_DIM, 1);
         shown++;
     }
@@ -732,7 +749,7 @@ static void draw_monitor(struct window *win)
     for (i = 0; i < ACT_N; i++) {
         u32 rx = lx;
         u32 ry = ly + i * (rh + rgap);
-        u32 spark_w = lw > 100u ? 78u : 48u;
+        u32 spark_w = lw > 116u ? 66u : 42u;
         u32 spark_x;
         u32 tx;
         u32 ty;
@@ -745,29 +762,28 @@ static void draw_monitor(struct window *win)
             spark_w = 0u;
             spark_x = rx + lw;
         }
-        if (sel == i) {
-            draw_round_fill_hard(rx, ry, lw, rh, 12u, col, 255u);
-            if (lw > 8u && rh > 8u) {
-                draw_round_fill_hard(rx + 2u, ry + 2u, lw - 4u, rh - 4u, 10u,
-                                     THEME_TITLE, 255u);
-            }
-        } else {
-            draw_round_fill_hard(rx, ry, lw, rh, 12u,
-                                 on ? THEME_HOVER : THEME_FIELD, 255u);
-        }
-        fb_fill_rect(rx + 4u, ry + 10u, 4u, rh > 20u ? rh - 20u : rh / 2u, col.r,
-                     col.g, col.b);
-        draw_round_fill_hard(rx + 14u, ry + rh / 2u - 5u, 10u, 10u, 5u, col,
+        draw_round_fill_hard(rx, ry, lw, rh, 12u,
+                             sel == i ? THEME_BG2 : (on ? THEME_TITLE : THEME_FIELD),
                              255u);
+        if (sel == i) {
+            fb_fill_rect(rx, ry + 10u, 4u, rh > 20u ? rh - 20u : rh / 2u,
+                         col.r, col.g, col.b);
+            fb_blend_rect(rx + 8u, ry + 1u, lw > 16u ? lw - 16u : lw, 1u,
+                          col.r, col.g, col.b, 180u);
+        } else if (on) {
+            fb_blend_rect(rx + 10u, ry + 1u, lw > 20u ? lw - 20u : lw, 1u,
+                          col.r, col.g, col.b, 90u);
+        }
+        draw_round_fill_hard(rx + 14u, ry + rh / 2u - 4u, 8u, 8u, 4u, col, 255u);
         tx = rx + 30u;
-        ty = ry + (rh > 56u ? 8u : 4u);
+        ty = ry + (rh > 56u ? 10u : 4u);
         if (rh >= 58u) {
-            draw_text_clip(tx, ty, spark_x - 6u, title[i], dim, 1);
-            draw_text_clip(tx, ty + FONT_LINE - 12u, spark_x - 6u, hero[i],
-                           THEME_FG, 1);
+            draw_text_clip(tx, ty, spark_x - 8u, title[i], dim, 1);
+            draw_text_clip(tx, ty + FONT_LINE - 10u, spark_x - 8u, hero[i],
+                           sel == i ? col : THEME_FG, 1);
         } else {
             draw_text_clip(tx, ry + (rh > FONT_HEIGHT ? (rh - FONT_HEIGHT) / 2u : 0u),
-                           spark_x - 6u, hero[i], THEME_FG, 1);
+                           spark_x - 8u, hero[i], sel == i ? col : THEME_FG, 1);
         }
         if (spark_w >= SYSMON_HIST && rh > 28u) {
             u32 sh = rh > 40u ? rh - 24u : 16u;
@@ -778,143 +794,126 @@ static void draw_monitor(struct window *win)
 
     {
         struct rgb col = act_color(sel);
-        u32 px = dx + 16u;
-        u32 py = dy + 10u;
+        u32 px = dx + 18u;
+        u32 py = dy + 14u;
         u32 ts = dw > 460u ? 2u : 1u;
         u32 hero_w = draw_text_width(hero[sel], ts);
+        u32 hero_x = px + 38u;
+        u32 hero_y = py + FONT_LINE - 4u;
+        u32 hero_h = ts == 2u ? FONT_TITLE_H : FONT_HEIGHT;
+        u32 sub_y = hero_y + hero_h + 2u;
+        u32 meter_y = sub_y + FONT_LINE - 6u;
         u32 chart_y;
         u32 chart_h;
-        u32 pill_y;
-        u32 pill_w;
         u32 stat_y;
-        u32 col_w;
+        u32 stat_h = 62u;
+        u32 stat_w;
+        u32 stat_gap = 8u;
+        u32 task_y;
+        u32 live_w;
         u32 span_w;
-        const char *p0 = sub[sel];
-        const char *p1 = i18n(MSG_ACT_LIVE);
-        const char *p2 = bat_txt;
+        u32 chip_x;
 
-        draw_round_fill_hard(dx, dy, dw, dh, 14u, THEME_FIELD, 255u);
+        draw_round_fill_hard(dx, dy, dw, dh, 16u, THEME_BG0, 255u);
+        fb_blend_rect(dx + 14u, dy + 1u, dw > 28u ? dw - 28u : dw, 2u,
+                      col.r, col.g, col.b, 190u);
+        draw_round_fill_hard(px, py, 28u, 28u, 9u, col, 255u);
+        draw_icon(px + 5u, py + 5u, 18u, UI_ICON_ACTIVITY, THEME_BG0);
 
-        {
-            u32 max_title = dx + dw - 16u;
+        live_w = draw_text_width(i18n(MSG_ACT_LIVE), 1) + 42u;
+        span_w = draw_text_width(i18n(MSG_ACT_SPAN), 1) + 42u;
+        chip_x = dx + dw > live_w + 16u ? dx + dw - live_w - 16u : px;
+        draw_pill(chip_x, py, live_w, 28u, i18n(MSG_ACT_LIVE), col);
+        if (chip_x > px + span_w + 44u) {
+            draw_pill(chip_x - span_w - 8u, py, span_w, 28u,
+                      i18n(MSG_ACT_SPAN), THEME_FG_DIM);
+        }
 
-            if (dw > hero_w + 28u) {
-                max_title = dx + dw - hero_w - 24u;
-            }
-            draw_text_clip(px, py, max_title, title[sel], THEME_FG, ts);
+        draw_text_clip(hero_x, py, chip_x > hero_x + 8u ? chip_x - 8u : dx + dw - 16u,
+                       title[sel], THEME_FG_DIM, 1);
+        if (hero_w > 0u) {
+            draw_text_clip(hero_x, hero_y, dx + dw - 16u, hero[sel], col, ts);
         }
-        if (dw > hero_w + 16u) {
-            draw_text(dx + dw - 16u - hero_w, py, hero[sel], col, ts);
-        }
-        py += ts == 2u ? FONT_HEIGHT * 2u + 4u : FONT_LINE;
-        draw_text_clip(px, py, dx + dw - 16u, sub[sel], dim, 1);
-        py += FONT_LINE - 6u;
-        draw_segments(px, py, dw > 32u ? dw - 32u : dw, 10u, pct[sel], col);
-        py += 18u;
+        draw_text_clip(hero_x, sub_y, dx + dw - 16u, sub[sel], dim, 1);
+        draw_segments(px, meter_y, dw > 36u ? dw - 36u : dw, 10u, pct[sel], col);
 
-        chart_h = dh / 3u;
-        if (chart_h > 200u) {
-            chart_h = 200u;
+        chart_y = meter_y + 20u;
+        chart_h = dh > 520u ? 190u : dh / 3u;
+        if (chart_h > 190u) {
+            chart_h = 190u;
         }
-        if (chart_h < 72u) {
-            chart_h = 72u;
+        if (chart_h < 88u) {
+            chart_h = 88u;
         }
-        if (py + chart_h + 160u > dy + dh) {
-            u32 room = dy + dh > py + 140u ? dy + dh - py - 140u : 64u;
+        if (chart_y + chart_h + stat_h + 24u > dy + dh) {
+            u32 room = dy + dh > chart_y + stat_h + 24u
+                           ? dy + dh - chart_y - stat_h - 24u : 48u;
 
             if (room < chart_h) {
                 chart_h = room;
             }
         }
-        chart_y = py;
-        draw_area(px, chart_y, dw > 32u ? dw - 32u : dw, chart_h, hist[sel], col);
-        span_w = draw_text_width(i18n(MSG_ACT_SPAN), 1);
-        if (dx + dw > span_w + 24u) {
-            draw_text(dx + dw - 16u - span_w, chart_y + chart_h - FONT_LINE + 6u,
+        draw_area(px, chart_y, dw > 36u ? dw - 36u : dw, chart_h, hist[sel], col);
+        if (chart_h >= FONT_LINE + 12u) {
+            draw_text(px + 12u, chart_y + chart_h - FONT_LINE + 4u,
                       i18n(MSG_ACT_SPAN), dim, 1);
         }
 
-        if (sel == 0u) {
-            p0 = i18n(s->preempt ? MSG_ACT_PREEMPT_ON : MSG_ACT_PREEMPT_OFF);
-            p1 = core_txt;
-            p2 = hz_txt;
-        } else if (sel == 1u) {
-            p0 = i18n(MSG_ACT_HEAP);
-            p1 = heap_txt;
-            p2 = free_txt;
-        } else if (sel == 2u) {
-            p0 = i18n(MSG_ACT_NO_3D);
-            p1 = gpu_sub;
-            p2 = i18n(MSG_ACT_LIVE);
-        } else if (sel == 3u) {
-            p0 = s->net_link ? i18n(MSG_ACT_LINK) : i18n(MSG_ACT_DOWN);
-            p1 = s->nic_txt[0] != '\0' ? s->nic_txt : i18n(MSG_ACT_NO_NIC);
-            p2 = (s->wlan && s->ssid_txt[0] != '\0') ? s->ssid_txt
-                                                    : i18n(MSG_ACT_LIVE);
-        } else if (sel == 4u) {
-            p0 = s->persist ? i18n(MSG_ACT_PERSIST) : i18n(MSG_ACT_INITRD);
-            p1 = disk_sub;
-            p2 = i18n(MSG_ACT_LIVE);
-        } else {
-            p0 = bat_txt;
-            p1 = sys_sub;
-            p2 = i18n(s->preempt ? MSG_ACT_PREEMPT_ON : MSG_ACT_PREEMPT_OFF);
-        }
-
-        pill_y = chart_y + chart_h + 12u;
-        pill_w = dw > 56u ? (dw - 48u) / 3u : 80u;
-        if (pill_w > 12u && pill_y + 34u < dy + dh) {
-            draw_pill(px, pill_y, pill_w, 32u, p0, col);
-            draw_pill(px + pill_w + 8u, pill_y, pill_w, 32u, p1, col);
-            draw_pill(px + (pill_w + 8u) * 2u, pill_y, pill_w, 32u, p2, col);
-        }
-
-        stat_y = pill_y + 44u;
-        col_w = dw > 48u ? (dw - 32u) / 3u : 80u;
-        if (stat_y + FONT_LINE * 2u < dy + dh) {
+        stat_y = chart_y + chart_h + 12u;
+        stat_w = dw > 52u ? (dw - 36u - stat_gap * 2u) / 3u : 80u;
+        if (stat_y + stat_h < dy + dh && stat_w > 24u) {
             if (sel == 0u) {
-                draw_kv(px, stat_y, col_w, i18n(MSG_ACT_UTIL), s->cpu_txt);
-                draw_kv(px + col_w, stat_y, col_w, i18n(MSG_ACT_CORE), core_txt);
-                draw_kv(px + col_w * 2u, stat_y, col_w, i18n(MSG_ACT_TASKS),
-                        sys_sub);
+                draw_kv(px, stat_y, stat_w, stat_h, i18n(MSG_ACT_UTIL), s->cpu_txt, col);
+                draw_kv(px + stat_w + stat_gap, stat_y, stat_w, stat_h,
+                        i18n(MSG_ACT_CORE), core_txt, col);
+                draw_kv(px + (stat_w + stat_gap) * 2u, stat_y, stat_w, stat_h,
+                        i18n(MSG_ACT_TASKS), sys_sub, col);
             } else if (sel == 1u) {
-                draw_kv(px, stat_y, col_w, i18n(MSG_ACT_USED), s->ram_txt);
-                draw_kv(px + col_w, stat_y, col_w, i18n(MSG_ACT_HEAP), heap_txt);
-                draw_kv(px + col_w * 2u, stat_y, col_w, i18n(MSG_ACT_UTIL),
-                        ram_pct_txt);
+                draw_kv(px, stat_y, stat_w, stat_h, i18n(MSG_ACT_USED), s->ram_txt, col);
+                draw_kv(px + stat_w + stat_gap, stat_y, stat_w, stat_h,
+                        i18n(MSG_ACT_HEAP), heap_txt, col);
+                draw_kv(px + (stat_w + stat_gap) * 2u, stat_y, stat_w, stat_h,
+                        i18n(MSG_ACT_UTIL), ram_pct_txt, col);
             } else if (sel == 2u) {
-                draw_kv(px, stat_y, col_w, i18n(MSG_ACT_GPU), s->fb_txt);
-                draw_kv(px + col_w, stat_y, col_w, i18n(MSG_ACT_UTIL), gpu_sub);
-                draw_kv(px + col_w * 2u, stat_y, col_w, i18n(MSG_ACT_NO_3D),
-                        i18n(MSG_ACT_LIVE));
+                draw_kv(px, stat_y, stat_w, stat_h, i18n(MSG_ACT_GPU), s->fb_txt, col);
+                draw_kv(px + stat_w + stat_gap, stat_y, stat_w, stat_h,
+                        i18n(MSG_ACT_UTIL), gpu_sub, col);
+                draw_kv(px + (stat_w + stat_gap) * 2u, stat_y, stat_w, stat_h,
+                        i18n(MSG_ACT_NO_3D), i18n(MSG_ACT_LIVE), col);
             } else if (sel == 3u) {
-                draw_kv(px, stat_y, col_w, i18n(MSG_ACT_NET), hero[3]);
-                draw_kv(px + col_w, stat_y, col_w, i18n(MSG_ACT_LINK), p0);
-                draw_kv(px + col_w * 2u, stat_y, col_w, i18n(MSG_ACT_LIVE),
-                        p2);
+                draw_kv(px, stat_y, stat_w, stat_h, i18n(MSG_ACT_NET), hero[3], col);
+                draw_kv(px + stat_w + stat_gap, stat_y, stat_w, stat_h,
+                        i18n(MSG_ACT_LINK), s->net_link ? i18n(MSG_ACT_LINK)
+                                                        : i18n(MSG_ACT_DOWN), col);
+                draw_kv(px + (stat_w + stat_gap) * 2u, stat_y, stat_w, stat_h,
+                        i18n(MSG_ACT_LIVE), s->wlan && s->ssid_txt[0] != '\0'
+                                                ? s->ssid_txt : s->nic_txt, col);
             } else if (sel == 4u) {
-                draw_kv(px, stat_y, col_w, i18n(MSG_ACT_DISK), hero[4]);
-                draw_kv(px + col_w, stat_y, col_w, i18n(MSG_ACT_BLK), disk_sub);
-                draw_kv(px + col_w * 2u, stat_y, col_w, i18n(MSG_ACT_PERSIST),
-                        s->persist ? i18n(MSG_ACT_PERSIST) : i18n(MSG_ACT_INITRD));
+                draw_kv(px, stat_y, stat_w, stat_h, i18n(MSG_ACT_DISK), hero[4], col);
+                draw_kv(px + stat_w + stat_gap, stat_y, stat_w, stat_h,
+                        i18n(MSG_ACT_BLK), disk_sub, col);
+                draw_kv(px + (stat_w + stat_gap) * 2u, stat_y, stat_w, stat_h,
+                        i18n(MSG_ACT_PERSIST),
+                        s->persist ? i18n(MSG_ACT_PERSIST) : i18n(MSG_ACT_INITRD), col);
             } else {
-                draw_kv(px, stat_y, col_w, i18n(MSG_ACT_SYS), s->up_txt);
-                draw_kv(px + col_w, stat_y, col_w, i18n(MSG_ACT_TASKS), sys_sub);
-                draw_kv(px + col_w * 2u, stat_y, col_w,
-                        i18n(s->ac ? MSG_ACT_AC : MSG_ACT_BAT), bat_txt);
+                draw_kv(px, stat_y, stat_w, stat_h, i18n(MSG_ACT_SYS), s->up_txt, col);
+                draw_kv(px + stat_w + stat_gap, stat_y, stat_w, stat_h,
+                        i18n(MSG_ACT_TASKS), sys_sub, col);
+                draw_kv(px + (stat_w + stat_gap) * 2u, stat_y, stat_w, stat_h,
+                        i18n(s->ac ? MSG_ACT_AC : MSG_ACT_BAT), bat_txt, col);
             }
         }
 
-        if (stat_y + FONT_LINE * 4u + 8u < dy + dh &&
+        task_y = stat_y + stat_h + 14u;
+        if (task_y + FONT_LINE * 3u < dy + dh &&
             (sel == 0u || sel == 5u)) {
-            u32 ty = stat_y + FONT_LINE * 2u;
-            u32 rows = (dy + dh - ty) / (FONT_LINE - 4u);
+            u32 rows = (dy + dh - task_y) / (FONT_LINE + 2u);
 
-            if (rows > 5u) {
-                rows = 5u;
+            if (rows > 4u) {
+                rows = 4u;
             }
-            if (rows >= 2u) {
-                draw_task_rows(px, ty, dw > 32u ? dw - 32u : dw, rows - 1u, col);
+            if (rows > 0u) {
+                draw_task_rows(px, task_y, dw > 36u ? dw - 36u : dw, rows, col);
             }
         }
     }
