@@ -194,6 +194,27 @@ u32 hit_test(i32 px, i32 py)
                 }
             }
         }
+        if (w->kind == WIN_ACTIVITY) {
+            u32 lx;
+            u32 ly;
+            u32 lw;
+            u32 rh;
+            u32 rgap;
+            u32 dx;
+            u32 dy;
+            u32 dw;
+            u32 dh;
+            u32 r;
+
+            act_layout(w, &lx, &ly, &lw, &rh, &rgap, &dx, &dy, &dw, &dh);
+            for (r = 0; r < ACT_N; r++) {
+                u32 ry = ly + r * (rh + rgap);
+
+                if (in_rect(px, py, (i32)lx, (i32)ry, (i32)lw, (i32)rh)) {
+                    return HIT_ACT + r;
+                }
+            }
+        }
         if (w->kind == WIN_POWER) {
             i32 by = wy + (i32)TITLE_H + 16 + (i32)FONT_LINE + 12;
             if (in_rect(px, py, wx + 24, by, 140, 40)) {
@@ -282,7 +303,8 @@ enum cursor_kind desktop_cursor_kind(u32 hit)
     if ((hit >= HIT_LANG && hit < HIT_LANG + HIT_LANG_MAX) ||
         hit == HIT_POWER_OK || hit == HIT_POWER_NO ||
         hit == HIT_WP_0 || hit == HIT_WP_1 ||
-        (hit >= HIT_IC_0 && hit < HIT_IC_0 + ICON_STYLE_COUNT)) {
+        (hit >= HIT_IC_0 && hit < HIT_IC_0 + ICON_STYLE_COUNT) ||
+        (hit >= HIT_ACT && hit < HIT_ACT + ACT_N)) {
         return CURSOR_KIND_POINTER;
     }
     return CURSOR_KIND_ARROW;
@@ -375,6 +397,18 @@ void handle_click(u32 hit, bool dbl)
     if (hit >= HIT_TASK && hit < HIT_TASK + MAX_WIN) {
         z_raise(hit - HIT_TASK);
         s_menu = false;
+        return;
+    }
+    if (hit >= HIT_ACT && hit < HIT_ACT + ACT_N) {
+        u32 wi;
+
+        for (wi = 0; wi < MAX_WIN; ++wi) {
+            if (s_win[wi].used && s_win[wi].kind == WIN_ACTIVITY) {
+                s_win[wi].file_sel = hit - HIT_ACT;
+                z_raise(wi);
+                break;
+            }
+        }
         return;
     }
     if (hit >= HIT_BODY && hit < HIT_BODY + MAX_WIN) {

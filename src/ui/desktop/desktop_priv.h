@@ -28,6 +28,7 @@
 #include "wallpaper.h"
 #include "net.h"
 #include "sysmon.h"
+#include "task.h"
 
 #define DOCK_M     ui_px(18u)
 #define DOCK_H     ui_px(66u)
@@ -69,6 +70,8 @@
 #define HIT_WP_0     0x812u
 #define HIT_WP_1     0x813u
 #define HIT_IC_0     0x820u
+#define HIT_ACT      0x830u
+#define ACT_N        6u
 #define HIT_CTX      0xA00u
 #define HIT_DOCK     0xB00u
 #define HIT_STATUS   0xC00u
@@ -241,6 +244,8 @@ i32 win_open(enum win_kind kind);
 void action_open(u32 item);
 void settings_layout(const struct window *w, u32 *lang_y, u32 *wp_y, u32 *ic_y);
 void settings_lang_btn(u32 bx, u32 lang_y, u32 i, u32 *x, u32 *y);
+void act_layout(const struct window *w, u32 *lx, u32 *ly, u32 *lw, u32 *rh,
+                u32 *rgap, u32 *dx, u32 *dy, u32 *dw, u32 *dh);
 void clamp_win(struct window *w);
 void paint_windows(void);
 

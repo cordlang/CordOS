@@ -39,6 +39,8 @@ struct sysmon_snap {
     char ssid_txt[33];
     u8 cpu_hist[SYSMON_HIST];
     u8 ram_hist[SYSMON_HIST];
+    u8 net_hist[SYSMON_HIST];
+    u8 disk_hist[SYSMON_HIST];
 };
 
 void sysmon_idle_begin(void);

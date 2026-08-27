@@ -263,6 +263,22 @@ bool sysmon_poll(void)
 
     hist_push(snap_os.cpu_hist, (u8)snap_os.cpu_pct);
     hist_push(snap_os.ram_hist, (u8)snap_os.ram_pct);
+    {
+        u8 net_lv = 0;
+        u8 disk_lv = snap_os.persist ? 40u : 12u;
+
+        if (snap_os.net_nic) {
+            net_lv = 10u;
+        }
+        if (snap_os.net_link) {
+            net_lv = 62u;
+        }
+        if (snap_os.wlan) {
+            net_lv = 78u;
+        }
+        hist_push(snap_os.net_hist, net_lv);
+        hist_push(snap_os.disk_hist, disk_lv);
+    }
     fill_text();
     return true;
 }
