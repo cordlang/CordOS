@@ -13,6 +13,10 @@
 #define SYS_OPEN   6
 #define SYS_CLOSE  7
 
+#define PROT_READ  1
+#define PROT_WRITE 2
+#define PROT_EXEC  4
+
 long nos_exit(long code);
 long nos_write(long fd, const void *buf, unsigned long len);
 long nos_read(long fd, void *buf, unsigned long len);

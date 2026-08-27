@@ -64,12 +64,12 @@ mappings start at `0x41000000`. Kernel `.rodata` is no longer a valid
 | 2 | `read` | `read(fd, buf, len)` | `fd=0` → keyboard UTF-8, blocking `hlt`. Else `-1`. Bad pointer → `-1`. |
 | 3 | `yield` | `yield()` | `task_yield()` (weak no-op if F4 not linked) |
 | 4 | `getpid` | `getpid()` | `task_current()->pid` or `0` |
-| 5 | `mmap` | `mmap(hint, len, prot)` | Anonymous user pages, `PAGE_WRITE`. `hint=0` bump-allocates from `0x41000000`. `len` rounded to 4 KiB, max 16 MiB. Returns VA or `-1`. `prot` is accepted and currently ignored (always writable). |
+| 5 | `mmap` | `mmap(hint, len, prot)` | Anonymous user pages. `PROT_WRITE` → `PAGE_WRITE`; without it the leaf is read-only. `PROT_WRITE|PROT_EXEC` is `-1` (W^X). `hint=0` bump-allocates from `0x41000000`. `len` rounded to 4 KiB, max 16 MiB. Returns VA or `-1`. NX (EFER.NXE) still open. |
 | 6 | `open` | `open(path)` | Copies a NUL-terminated path, then `vfs_open`. `-1` if bad pointer, unterminated path, missing file, or vfs not mounted. |
 | 7 | `close` | `close(fd)` | `vfs_close(fd)`. `-1` if not mounted / bad fd. |
 
 Console fds `0` (keyboard) and `1` (VGA) are not the vfs table. `SYS_OPEN`
-returns a raw vfs fd (`0`–`7`); `SYS_READ`/`SYS_WRITE` do not multiplex those
+returns a raw vfs fd (`0`–7); `SYS_READ`/`SYS_WRITE` do not multiplex those
 yet.
 
 ## Kernel C API
