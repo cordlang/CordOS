@@ -23,16 +23,16 @@ void *memcpy(void *dest, const void *src, size_t length)
         return dest;
     }
 
-    if ((((size_t)d | (size_t)s) & 3u) == 0) {
-        /* Same 4-byte misalignment: one word then both are 8-aligned. */
-        if ((((size_t)d | (size_t)s) & 7u) != 0 && length >= 4u) {
+#ifdef __x86_64__
+    if ((((size_t)d ^ (size_t)s) & 7u) == 0) {
+        /* Identical 8-byte phase. If both are 4-mod-8, one word then qwords. */
+        if (((size_t)d & 7u) == 4u && length >= 4u) {
             *(u32 *)d = *(const u32 *)s;
             d += 4;
             s += 4;
             length -= 4u;
         }
-#ifdef __x86_64__
-        {
+        if (((size_t)d & 7u) == 0) {
             u64 *dw = (u64 *)d;
             const u64 *sw = (const u64 *)s;
 
@@ -43,20 +43,30 @@ void *memcpy(void *dest, const void *src, size_t length)
             d = (u8 *)dw;
             s = (const u8 *)sw;
         }
-#else
-        {
-            u32 *dw = (u32 *)d;
-            const u32 *sw = (const u32 *)s;
+    } else if ((((size_t)d | (size_t)s) & 3u) == 0) {
+        u32 *dw = (u32 *)d;
+        const u32 *sw = (const u32 *)s;
 
-            while (length >= sizeof(u32)) {
-                *dw++ = *sw++;
-                length -= sizeof(u32);
-            }
-            d = (u8 *)dw;
-            s = (const u8 *)sw;
+        while (length >= sizeof(u32)) {
+            *dw++ = *sw++;
+            length -= sizeof(u32);
         }
-#endif
+        d = (u8 *)dw;
+        s = (const u8 *)sw;
     }
+#else
+    if ((((size_t)d | (size_t)s) & 3u) == 0) {
+        u32 *dw = (u32 *)d;
+        const u32 *sw = (const u32 *)s;
+
+        while (length >= sizeof(u32)) {
+            *dw++ = *sw++;
+            length -= sizeof(u32);
+        }
+        d = (u8 *)dw;
+        s = (const u8 *)sw;
+    }
+#endif
 
     while (length > 0u) {
         *d++ = *s++;
