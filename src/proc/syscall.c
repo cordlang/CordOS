@@ -260,8 +260,15 @@ static i64 sys_mmap(u64 hint, u64 len, u64 prot)
     if (map_len == 0) {
         return -1;
     }
-    extra = PAGE_WRITE;
-    (void)prot;
+    /* Fase 17: W^X. PROT_WRITE y PROT_EXEC juntos no. NX hardware
+     * (EFER.NXE + PTE.XD) sigue abierto; esto ya corta el combo. */
+    if ((prot & PROT_WRITE) != 0 && (prot & PROT_EXEC) != 0) {
+        return -1;
+    }
+    extra = 0;
+    if ((prot & PROT_WRITE) != 0) {
+        extra = PAGE_WRITE;
+    }
 
     if (hint == 0) {
         va = mmap_bump_os;
