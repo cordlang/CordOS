@@ -8,5 +8,7 @@ void ui_fade_out(void);
 /* old_front is a full framebuffer capture; new scene must already be in the
  * compose backbuffer. Blends old → new onto the screen. */
 void ui_crossfade_from(const u8 *old_front);
+/* Same blend; steps is the number of in-between frames (clamped). */
+void ui_crossfade_from_n(const u8 *old_front, u32 steps);
 
 #endif

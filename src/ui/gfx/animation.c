@@ -65,9 +65,16 @@ void ui_fade_out(void)
     cursor_invalidate();
 }
 
-void ui_crossfade_from(const u8 *old_front)
+void ui_crossfade_from_n(const u8 *old_front, u32 steps)
 {
     u32 step;
+
+    if (steps < 2u) {
+        steps = 2u;
+    }
+    if (steps > 24u) {
+        steps = 24u;
+    }
 
     if (old_front == NULL || !fb_compose_ready()) {
         if (fb_compose_ready()) {
@@ -77,8 +84,9 @@ void ui_crossfade_from(const u8 *old_front)
     }
 
     cursor_invalidate();
-    for (step = 0; step <= UI_XFADE_STEPS; ++step) {
-        u32 t = (step * 255u) / UI_XFADE_STEPS;
+    for (step = 0; step <= steps; ++step) {
+        u32 t = (step * 255u) / steps;
+
         /* Smoothstep so it eases in and out. */
         t = (t * t * (3u * 255u - 2u * t)) / (255u * 255u);
         if (t > 255u) {
@@ -91,4 +99,9 @@ void ui_crossfade_from(const u8 *old_front)
      * cursor_flip without wiping the fade result. */
     fb_compose_begin();
     cursor_invalidate();
+}
+
+void ui_crossfade_from(const u8 *old_front)
+{
+    ui_crossfade_from_n(old_front, UI_XFADE_STEPS);
 }

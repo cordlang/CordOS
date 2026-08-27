@@ -19,6 +19,7 @@
 #include "shell.h"
 #include "theme.h"
 #include "time.h"
+#include "utf8.h"
 #include "vfs.h"
 #include "icons.h"
 #include "wallpaper.h"
@@ -67,6 +68,12 @@
 #define HIT_CTX      0xA00u
 #define HIT_DOCK     0xB00u
 #define HIT_STATUS   0xC00u
+#define HIT_SPOT     0xF00u
+#define HIT_SPOT_ROW 0xF10u
+#define SPOT_MAX     8u
+#define SPOT_QMAX    48u
+#define SPOT_BAR_H   ui_px(64u)
+#define SPOT_ROW_H   ui_px(52u)
 #define WP_THUMB_W   ui_px(200u)
 #define WP_THUMB_H   ui_px(112u)
 #define WP_THUMB_GAP ui_px(18u)
@@ -104,6 +111,7 @@ static struct window s_win[MAX_WIN];
 static u32 s_z[MAX_WIN];
 static u32 s_zcount;
 static bool s_menu;
+static bool s_spot;
 static bool s_ctx;
 static i32 s_ctx_x;
 static i32 s_ctx_y;
@@ -124,12 +132,39 @@ static bool s_widget_repaint_base;
 static u32 s_last_click_hit = HIT_NONE;
 static u32 s_last_click_ms;
 
+enum spot_kind {
+    SPOT_APP = 0,
+    SPOT_FILE
+};
+
+struct spot_item {
+    enum spot_kind kind;
+    u32 arg;
+    enum ui_icon icon;
+    enum msg_id cat;
+    char title[36];
+};
+
+static char s_spot_q[SPOT_QMAX];
+static u32 s_spot_len;
+static struct spot_item s_spot_hits[SPOT_MAX];
+static u32 s_spot_n;
+static u32 s_spot_sel;
+static u8 *s_spot_fade_from;
+static bool s_spot_need_xfade;
+
 static void settings_layout(const struct window *w, u32 *lang_y, u32 *wp_y,
                             u32 *ic_y);
 static void settings_lang_btn(u32 bx, u32 lang_y, u32 i, u32 *x, u32 *y);
 static u32 hit_test(i32 px, i32 py);
 static enum cursor_kind desktop_cursor_kind(u32 hit);
 static void desktop_redraw(void);
+static void action_open(u32 item);
+static void spot_rebuild(void);
+static void spot_open(void);
+static void spot_close(void);
+static void spot_activate(u32 index);
+static void spot_geom(u32 *x, u32 *y, u32 *w, u32 *h);
 
 static bool is_double_click(u32 hit)
 {
@@ -735,6 +770,29 @@ static void ctx_geom(u32 *x, u32 *y, u32 *w, u32 *h)
     }
 }
 
+static void spot_geom(u32 *x, u32 *y, u32 *w, u32 *h)
+{
+    u32 sw = fb_width();
+    u32 sh = fb_height();
+    u32 rows = 0;
+    u32 pad = 0;
+
+    *w = 680u;
+    if (*w + 48u > sw) {
+        *w = sw > 48u ? sw - 48u : sw;
+    }
+    if (s_spot_n > 0u) {
+        rows = s_spot_n * SPOT_ROW_H;
+        pad = 10u;
+    } else if (s_spot_q[0] != '\0') {
+        rows = SPOT_ROW_H;
+        pad = 10u;
+    }
+    *h = SPOT_BAR_H + rows + pad;
+    *x = sw > *w ? (sw - *w) / 2u : 0;
+    *y = sh > *h ? (sh - *h) / 2u : 16u;
+}
+
 static u32 hit_test(i32 px, i32 py)
 {
     u32 i;
@@ -742,6 +800,31 @@ static u32 hit_test(i32 px, i32 py)
     u32 y;
     u32 iw;
     u32 ih;
+
+    if (s_spot) {
+        u32 sx;
+        u32 sy;
+        u32 sw;
+        u32 sh;
+
+        spot_geom(&sx, &sy, &sw, &sh);
+        if (in_rect(px, py, (i32)sx, (i32)sy, (i32)sw, (i32)sh)) {
+            u32 row;
+            u32 ry;
+
+            if (py < (i32)(sy + SPOT_BAR_H)) {
+                return HIT_SPOT;
+            }
+            for (row = 0; row < s_spot_n && row < SPOT_MAX; ++row) {
+                ry = sy + SPOT_BAR_H + row * SPOT_ROW_H;
+                if (in_rect(px, py, (i32)sx, (i32)ry, (i32)sw,
+                            (i32)SPOT_ROW_H)) {
+                    return HIT_SPOT_ROW + row;
+                }
+            }
+            return HIT_SPOT;
+        }
+    }
 
     if (s_ctx) {
         u32 cx;
@@ -932,6 +1015,10 @@ static enum cursor_kind desktop_cursor_kind(u32 hit)
     if (hit >= HIT_CTX && hit < HIT_CTX + CTX_COUNT) {
         return CURSOR_KIND_POINTER;
     }
+    if (hit == HIT_SPOT ||
+        (hit >= HIT_SPOT_ROW && hit < HIT_SPOT_ROW + SPOT_MAX)) {
+        return CURSOR_KIND_POINTER;
+    }
     if (hit >= HIT_CLOSE && hit < HIT_CLOSE + MAX_WIN) {
         return CURSOR_KIND_POINTER;
     }
@@ -951,6 +1038,7 @@ static void action_open(u32 item)
 {
     s_menu = false;
     s_ctx = false;
+    s_spot = false;
     if (item == 0) {
         (void)win_open(WIN_FILES);
     } else if (item == 1) {
@@ -963,6 +1051,288 @@ static void action_open(u32 item)
         s_logout = true;
     } else if (item == 5) {
         (void)win_open(WIN_POWER);
+    }
+}
+
+static int spot_fold_eq_at(const char *hay, const char *needle, u32 off)
+{
+    u32 i = 0;
+    char hc;
+    char nc;
+
+    while (needle[i] != '\0') {
+        hc = hay[off + i];
+        nc = needle[i];
+        if (hc == '\0') {
+            return 0;
+        }
+        if (hc >= 'A' && hc <= 'Z') {
+            hc = (char)(hc + 32);
+        }
+        if (nc >= 'A' && nc <= 'Z') {
+            nc = (char)(nc + 32);
+        }
+        if (hc != nc) {
+            return 0;
+        }
+        ++i;
+    }
+    return 1;
+}
+
+static int spot_match(const char *hay, const char *needle)
+{
+    u32 i;
+
+    if (needle == NULL || needle[0] == '\0') {
+        return 1;
+    }
+    if (hay == NULL) {
+        return 0;
+    }
+    for (i = 0; hay[i] != '\0'; ++i) {
+        if (spot_fold_eq_at(hay, needle, i)) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static void spot_add(enum spot_kind kind, u32 arg, enum ui_icon icon,
+                    enum msg_id cat, const char *title)
+{
+    if (s_spot_n >= SPOT_MAX || title == NULL) {
+        return;
+    }
+    s_spot_hits[s_spot_n].kind = kind;
+    s_spot_hits[s_spot_n].arg = arg;
+    s_spot_hits[s_spot_n].icon = icon;
+    s_spot_hits[s_spot_n].cat = cat;
+    copy_n(s_spot_hits[s_spot_n].title, 36, title);
+    s_spot_n++;
+}
+
+static void spot_rebuild(void)
+{
+    static const enum msg_id labels[MENU_COUNT] = {
+        MSG_HOME_FILES, MSG_HOME_TERMINAL, MSG_HOME_SETTINGS,
+        MSG_HOME_ABOUT, MSG_HOME_LOGOUT, MSG_HOME_POWER
+    };
+    static const enum ui_icon icons[MENU_COUNT] = {
+        UI_ICON_FILES, UI_ICON_TERM, UI_ICON_SETTINGS,
+        UI_ICON_ABOUT, UI_ICON_LOGOUT, UI_ICON_POWER
+    };
+    static const char *alias[MENU_COUNT] = {
+        "files archivos explorer",
+        "terminal shell consola cmd",
+        "settings ajustes config",
+        "about acerca info",
+        "logout salir sesion sign out",
+        "power apagar shutdown halt"
+    };
+    const char *q = s_spot_q;
+    u32 i;
+
+    s_spot_n = 0;
+    for (i = 0; i < MENU_COUNT; ++i) {
+        const char *title = i18n(labels[i]);
+
+        if (spot_match(title, q) || spot_match(alias[i], q)) {
+            spot_add(SPOT_APP, i, icons[i], MSG_SPOTLIGHT_APPS, title);
+        }
+    }
+    files_reload();
+    if (q[0] != '\0') {
+        for (i = 0; i < s_files.count && s_spot_n < SPOT_MAX; ++i) {
+            if (spot_match(s_files.names[i], q)) {
+                spot_add(SPOT_FILE, i, UI_ICON_FILES, MSG_SPOTLIGHT_FILES,
+                         s_files.names[i]);
+            }
+        }
+    }
+    if (s_spot_sel >= s_spot_n) {
+        s_spot_sel = s_spot_n > 0u ? s_spot_n - 1u : 0;
+    }
+}
+
+static void spot_arm_xfade(void)
+{
+    if (!fb_compose_ready()) {
+        return;
+    }
+    if (s_spot_fade_from == NULL) {
+        s_spot_fade_from = fb_layer_alloc();
+    }
+    if (s_spot_fade_from != NULL) {
+        fb_copy_front(s_spot_fade_from);
+        s_spot_need_xfade = true;
+    }
+}
+
+static void spot_open(void)
+{
+    s_menu = false;
+    s_ctx = false;
+    spot_arm_xfade();
+    s_spot = true;
+    s_spot_q[0] = '\0';
+    s_spot_len = 0;
+    s_spot_sel = 0;
+    spot_rebuild();
+}
+
+static void spot_close(void)
+{
+    if (s_spot) {
+        spot_arm_xfade();
+    }
+    s_spot = false;
+    s_spot_q[0] = '\0';
+    s_spot_len = 0;
+    s_spot_n = 0;
+    s_spot_sel = 0;
+}
+
+static void spot_activate(u32 index)
+{
+    struct spot_item hit;
+
+    if (index >= s_spot_n) {
+        return;
+    }
+    hit = s_spot_hits[index];
+    spot_close();
+    if (hit.kind == SPOT_APP) {
+        action_open(hit.arg);
+        return;
+    }
+    {
+        i32 id = win_open(WIN_FILES);
+
+        if (id >= 0) {
+            files_preview(&s_win[id], hit.arg);
+        }
+    }
+}
+
+static void spot_append(u32 code)
+{
+    char tmp[4];
+    u32 n;
+    u32 i;
+
+    if (code < 32u || code == 127u || key_is_special(code)) {
+        return;
+    }
+    n = utf8_encode(code, tmp);
+    if (n == 0 || s_spot_len + n >= SPOT_QMAX) {
+        return;
+    }
+    for (i = 0; i < n; ++i) {
+        s_spot_q[s_spot_len++] = tmp[i];
+    }
+    s_spot_q[s_spot_len] = '\0';
+    s_spot_sel = 0;
+    spot_rebuild();
+}
+
+static void spot_backspace(void)
+{
+    if (s_spot_len == 0) {
+        return;
+    }
+    s_spot_len--;
+    while (s_spot_len > 0 &&
+           (((u8)s_spot_q[s_spot_len]) & 0xC0u) == 0x80u) {
+        s_spot_len--;
+    }
+    s_spot_q[s_spot_len] = '\0';
+    s_spot_sel = 0;
+    spot_rebuild();
+}
+
+static void draw_spot_lens(u32 x, u32 y, u32 size, struct rgb color)
+{
+    u32 hole = size > 8u ? size - 8u : size / 2u;
+    u32 hx;
+    u32 hy;
+
+    if (size < 10u) {
+        size = 10u;
+        hole = 4u;
+    }
+    draw_round_fill(x, y, size, size, size / 2u, color, 210u);
+    hx = x + (size > hole ? (size - hole) / 2u : 0);
+    hy = y + (size > hole ? (size - hole) / 2u : 0);
+    draw_round_fill(hx, hy, hole, hole, hole / 2u, THEME_GLASS, 255u);
+    fb_fill_rect(x + size - 4u, y + size - 3u, size / 2u, 3u, color.r, color.g,
+                 color.b);
+}
+
+static void draw_spot(void)
+{
+    u32 x;
+    u32 y;
+    u32 w;
+    u32 h;
+    u32 i;
+    u32 tx;
+    u32 ty;
+    u32 text_h = 22u;
+    struct rgb panel = { 0x1A, 0x1A, 0x1E };
+    struct rgb sel = { 0x32, 0x5A, 0xC8 };
+    const char *show;
+
+    spot_geom(&x, &y, &w, &h);
+    draw_round_fill_hard(x, y, w, h, 22u, panel, 240u);
+
+    draw_spot_lens(x + 22u, y + (SPOT_BAR_H > 22u ? (SPOT_BAR_H - 22u) / 2u : 0),
+                   22u, THEME_FG_DIM);
+
+    tx = x + 56u;
+    ty = y + (SPOT_BAR_H > text_h ? (SPOT_BAR_H - text_h) / 2u : 0);
+    if (s_spot_q[0] != '\0') {
+        show = s_spot_q;
+        draw_text_h(tx, ty, show, THEME_FG, text_h);
+        fb_fill_rect(tx + draw_text_width_h(show, text_h) + 3u, ty + 2u, 2u,
+                     text_h > 6u ? text_h - 6u : text_h, THEME_FG.r, THEME_FG.g,
+                     THEME_FG.b);
+    } else {
+        draw_text_h(tx, ty, i18n(MSG_SPOTLIGHT_PLACE), THEME_FG_DIM, text_h);
+        fb_fill_rect(tx, ty + 2u, 2u, text_h > 6u ? text_h - 6u : text_h,
+                     THEME_FG.r, THEME_FG.g, THEME_FG.b);
+    }
+
+    if (s_spot_n == 0u) {
+        if (s_spot_q[0] != '\0') {
+            draw_text(x + 24u, y + SPOT_BAR_H + 8u, i18n(MSG_SPOTLIGHT_NONE),
+                      THEME_FG_DIM, 1);
+        }
+        return;
+    }
+
+    fb_fill_rect(x + 18u, y + SPOT_BAR_H - 1u, w > 36u ? w - 36u : w, 1u,
+                 THEME_BORDER.r, THEME_BORDER.g, THEME_BORDER.b);
+
+    for (i = 0; i < s_spot_n; ++i) {
+        u32 ry = y + SPOT_BAR_H + i * SPOT_ROW_H;
+        u32 iy = ry + (SPOT_ROW_H > 28u ? (SPOT_ROW_H - 28u) / 2u : 0);
+        u32 title_y = ry + 8u;
+        bool hot = (i == s_spot_sel);
+        u32 cat_w;
+
+        if (hot) {
+            draw_round_fill(x + 10u, ry + 4u, w > 20u ? w - 20u : w,
+                            SPOT_ROW_H > 8u ? SPOT_ROW_H - 8u : SPOT_ROW_H, 12u,
+                            sel, 220u);
+        }
+        draw_icon(x + 22u, iy, 28u, s_spot_hits[i].icon,
+                  hot ? THEME_FG : THEME_FG_DIM);
+        draw_text_clip(x + 62u, title_y, x + w - 160u, s_spot_hits[i].title,
+                       THEME_FG, 1);
+        cat_w = draw_text_width(i18n(s_spot_hits[i].cat), 1);
+        draw_text(x + w - 24u - cat_w, title_y + 2u, i18n(s_spot_hits[i].cat),
+                  hot ? THEME_FG : THEME_FG_DIM, 1);
     }
 }
 
@@ -1172,12 +1542,10 @@ static void draw_status(void)
     u32 sw;
     u32 sh;
     u32 bat = 22u;
-    struct rgb sheen = { 0xFF, 0xFF, 0xFF };
     bool hot = (s_hover == HIT_STATUS);
 
     status_geom(&sx, &sy, &sw, &sh);
-    draw_glass(sx, sy, sw, sh, sh / 2u, THEME_GLASS, hot ? 90u : 70u);
-    draw_round_fill(sx + 2u, sy + 2u, sw - 4u, sh / 3u, sh / 2u, sheen, 22u);
+    draw_round_fill_hard(sx, sy, sw, sh, sh / 2u, THEME_GLASS, hot ? 240u : 230u);
     draw_icon(sx + (sw > bat ? (sw - bat) / 2u : 0),
               sy + (sh > bat ? (sh - bat) / 2u : 0),
               bat, battery_icon(), DESK_WHITE);
@@ -1197,12 +1565,10 @@ static void draw_dock(void)
     u32 dw;
     u32 dh;
     u32 i;
-    struct rgb sheen = { 0xFF, 0xFF, 0xFF };
     bool launcher_hot = (s_hover == HIT_LAUNCHER) || s_menu;
 
     dock_geom(&dx, &dy, &dw, &dh);
-    draw_glass(dx, dy, dw, dh, dh / 2u, THEME_GLASS, 72u);
-    draw_round_fill(dx + 3u, dy + 3u, dw - 6u, dh / 3u, dh / 2u, sheen, 24u);
+    draw_round_fill_hard(dx, dy, dw, dh, dh / 2u, THEME_GLASS, 240u);
 
     for (i = 0; i < DOCK_APPS; ++i) {
         u32 sx = dock_slot_x(dx, i);
@@ -1255,7 +1621,7 @@ static void draw_menu(void)
     u32 i;
 
     menu_geom(&mx, &my, &mw, &mh);
-    draw_glass(mx, my, mw, mh, THEME_RAD_CARD, THEME_GLASS, 100u);
+    draw_round_fill_hard(mx, my, mw, mh, THEME_RAD_CARD, THEME_GLASS, 240u);
     for (i = 0; i < MENU_COUNT; ++i) {
         u32 ry = my + MENU_INSET + i * MENU_ROW;
         u32 text_y = ry + (MENU_ROW > FONT_HEIGHT ? (MENU_ROW - FONT_HEIGHT) / 2u : 0);
@@ -1290,7 +1656,7 @@ static void draw_ctx(void)
     u32 desk_sel = wallpaper_desk_id();
 
     ctx_geom(&mx, &my, &mw, &mh);
-    draw_glass(mx, my, mw, mh, THEME_RAD_CARD, THEME_GLASS, 110u);
+    draw_round_fill_hard(mx, my, mw, mh, THEME_RAD_CARD, THEME_GLASS, 240u);
     draw_text(mx + 18u, my + MENU_INSET + 6u, i18n(MSG_CTX_TITLE),
               THEME_FG_DIM, 1);
     rows_y = my + MENU_INSET + CTX_HEADER;
@@ -1393,6 +1759,16 @@ static void desktop_redraw(void)
     if (s_ctx) {
         draw_ctx();
     }
+    if (s_spot) {
+        fb_overlay(0, 0, 0, 110u);
+        draw_spot();
+    }
+    if (s_spot_need_xfade && s_spot_fade_from != NULL) {
+        s_spot_need_xfade = false;
+        /* Blend the last on-screen frame into this scene so the dim does
+         * not land as a single memcpy wipe on the live LFB. */
+        ui_crossfade_from_n(s_spot_fade_from, 10u);
+    }
     ui_comp_mark_full();
     ui_comp_present();
 }
@@ -1423,6 +1799,19 @@ static void power_halt(void)
 
 static void handle_click(u32 hit, bool dbl)
 {
+    if (s_spot) {
+        if (hit >= HIT_SPOT_ROW && hit < HIT_SPOT_ROW + SPOT_MAX) {
+            spot_activate(hit - HIT_SPOT_ROW);
+            return;
+        }
+        if (hit == HIT_SPOT) {
+            return;
+        }
+        spot_close();
+        if (hit == HIT_DESKTOP || hit == HIT_BAR || hit == HIT_STATUS) {
+            return;
+        }
+    }
     if (hit >= HIT_CTX && hit < HIT_CTX + CTX_COUNT) {
         u32 item = hit - HIT_CTX;
         s_ctx = false;
@@ -1518,12 +1907,14 @@ static void handle_click(u32 hit, bool dbl)
     }
     if (hit == HIT_LAUNCHER) {
         s_ctx = false;
+        spot_close();
         s_menu = !s_menu;
         return;
     }
     if (hit == HIT_DESKTOP || hit == HIT_BAR || hit == HIT_STATUS) {
         s_menu = false;
         s_ctx = false;
+        spot_close();
         return;
     }
     s_ctx = false;
@@ -1531,6 +1922,10 @@ static void handle_click(u32 hit, bool dbl)
 
 static void handle_right_click(u32 hit)
 {
+    if (s_spot) {
+        spot_close();
+        return;
+    }
     if (hit == HIT_DESKTOP) {
         s_menu = false;
         s_ctx = true;
@@ -1546,6 +1941,42 @@ static void handle_key(u32 key)
     i32 top = z_top();
     struct window *w;
 
+    if (key == KEY_SPOTLIGHT) {
+        if (s_spot) {
+            spot_close();
+        } else {
+            spot_open();
+        }
+        return;
+    }
+    if (s_spot) {
+        if (key == 27u) {
+            spot_close();
+            return;
+        }
+        if (key == KEY_DOWN) {
+            if (s_spot_n > 0u) {
+                s_spot_sel = (s_spot_sel + 1u) % s_spot_n;
+            }
+            return;
+        }
+        if (key == KEY_UP) {
+            if (s_spot_n > 0u) {
+                s_spot_sel = (s_spot_sel == 0u) ? (s_spot_n - 1u) : (s_spot_sel - 1u);
+            }
+            return;
+        }
+        if (key == '\n' || key == '\r') {
+            spot_activate(s_spot_sel);
+            return;
+        }
+        if (key == '\b' || key == 127u) {
+            spot_backspace();
+            return;
+        }
+        spot_append(key);
+        return;
+    }
     if (key == KEY_F1) {
         shell_run();
         return;
@@ -1606,6 +2037,12 @@ static bool desk_chrome_hit(u32 hit)
     if (hit >= HIT_MENU && hit < HIT_MENU + MENU_COUNT) {
         return true;
     }
+    if (hit == HIT_SPOT) {
+        return true;
+    }
+    if (hit >= HIT_SPOT_ROW && hit < HIT_SPOT_ROW + SPOT_MAX) {
+        return true;
+    }
     return false;
 }
 
@@ -1622,6 +2059,11 @@ static bool desktop_widgets(void)
                           (desk_chrome_hit(s_widget_last_hover) ||
                            desk_chrome_hit(s_hover));
     bool repaint_base = full || s_widget_repaint_base || chrome_changed;
+
+    /* Partial dock paint is undimmed and punches a hole through Spotlight. */
+    if (s_spot) {
+        repaint_base = false;
+    }
 
     dock_geom(&dx, &dy, &dw, &dh);
     if (repaint_base) {
@@ -1650,6 +2092,9 @@ static bool desktop_widgets(void)
             if (i == 0u) {
                 s_menu = !s_menu;
                 s_ctx = false;
+                if (s_menu) {
+                    spot_close();
+                }
                 need_full = true;
             } else {
                 s_menu = false;
@@ -1679,6 +2124,24 @@ static bool desktop_widgets(void)
             }
         }
     }
+    if (s_spot) {
+        u32 sx;
+        u32 sy;
+        u32 sw;
+        u32 sh;
+
+        spot_geom(&sx, &sy, &sw, &sh);
+        for (i = 0; i < s_spot_n; ++i) {
+            u32 ry = sy + SPOT_BAR_H + i * SPOT_ROW_H;
+
+            if (ui_clicked(0xF20u + i, sx + 10u, ry + 4u,
+                           sw > 20u ? sw - 20u : sw,
+                           SPOT_ROW_H > 8u ? SPOT_ROW_H - 8u : SPOT_ROW_H)) {
+                spot_activate(i);
+                need_full = true;
+            }
+        }
+    }
     if (repaint_base) {
         desktop_cursor_update(true);
     }
@@ -1701,6 +2164,12 @@ void desktop_run(void)
     }
     s_zcount = 0;
     s_menu = false;
+    s_spot = false;
+    s_spot_q[0] = '\0';
+    s_spot_len = 0;
+    s_spot_n = 0;
+    s_spot_sel = 0;
+    s_spot_need_xfade = false;
     s_ctx = false;
     s_ctx_x = 0;
     s_ctx_y = 0;
@@ -1739,6 +2208,7 @@ void desktop_run(void)
     draw_taskbar();
     if (from != NULL) {
         ui_crossfade_from(from);
+        s_spot_fade_from = from;
     }
     desktop_cursor_update(true);
     ui_comp_mark_full();
@@ -1776,7 +2246,11 @@ void desktop_run(void)
                     bool now = desk_chrome_hit(hit);
 
                     s_hover = hit;
-                    if (!was || !now) {
+                    if (s_spot && hit >= HIT_SPOT_ROW &&
+                        hit < HIT_SPOT_ROW + SPOT_MAX) {
+                        s_spot_sel = hit - HIT_SPOT_ROW;
+                        dirty = true;
+                    } else if (!was || !now || s_spot) {
                         dirty = true;
                     }
                 }
@@ -1804,7 +2278,11 @@ void desktop_run(void)
                 bool now = desk_chrome_hit(live);
 
                 s_hover = live;
-                if (!was || !now) {
+                if (s_spot && live >= HIT_SPOT_ROW &&
+                    live < HIT_SPOT_ROW + SPOT_MAX) {
+                    s_spot_sel = live - HIT_SPOT_ROW;
+                    dirty = true;
+                } else if (!was || !now || s_spot) {
                     dirty = true;
                 }
             }

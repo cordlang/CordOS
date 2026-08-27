@@ -47,7 +47,7 @@ static void setup_stack(struct task *task)
     u8 *base;
     u64 *sp;
 
-    base = (u8 *)kmalloc(TASK_STACK_SIZE);
+v    base = (u8 *)kmalloc(TASK_STACK_SIZE);
     if (base == NULL) {
         panic("task: sin stack");
     }

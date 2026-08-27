@@ -27,6 +27,10 @@ void draw_wallpaper_thumb(u32 x, u32 y, u32 w, u32 h, u32 wp_id, bool selected);
 void draw_icon_style_thumb(u32 x, u32 y, u32 w, u32 h, u32 style, bool selected);
 void draw_round_fill(u32 x, u32 y, u32 w, u32 h, u32 rad, struct rgb color,
                      u8 alpha);
+/* Same fill, but coverage is snapped so dark chrome does not pick up a
+ * 1px light halo from the wallpaper. */
+void draw_round_fill_hard(u32 x, u32 y, u32 w, u32 h, u32 rad, struct rgb color,
+                          u8 alpha);
 void draw_glass(u32 x, u32 y, u32 w, u32 h, u32 rad, struct rgb tint, u8 alpha);
 void draw_text(u32 x, u32 y, const char *text, struct rgb color, u32 scale);
 void draw_text_clip(u32 x, u32 y, u32 max_x, const char *text, struct rgb color,

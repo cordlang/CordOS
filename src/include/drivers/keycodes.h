@@ -11,6 +11,7 @@
 #define KEY_F1    0x110010u
 #define KEY_HOME  0x110020u
 #define KEY_END   0x110021u
+#define KEY_SPOTLIGHT 0x110030u
 
 static inline bool key_is_special(u32 code)
 {

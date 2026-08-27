@@ -105,7 +105,7 @@ static u8 cover_from_d88(i32 d88)
 }
 
 static void blend_band(u32 x, u32 y, u32 w, u32 h, u32 rad, struct rgb color,
-                       u8 alpha, i32 x0, i32 y0, i32 x1, i32 y1)
+                       u8 alpha, i32 x0, i32 y0, i32 x1, i32 y1, bool hard)
 {
     i32 py;
     i32 px;
@@ -147,6 +147,9 @@ static void blend_band(u32 x, u32 y, u32 w, u32 h, u32 rad, struct rgb color,
         for (px = x0; px < x1; ++px) {
             u8 c = cover_from_d88(sdf_round_box_88(px, py, ix, iy, iw, ih, ir));
             u8 a;
+            if (hard) {
+                c = (c >= 128u) ? 255u : 0;
+            }
             if (c == 0) {
                 continue;
             }
@@ -158,8 +161,8 @@ static void blend_band(u32 x, u32 y, u32 w, u32 h, u32 rad, struct rgb color,
     }
 }
 
-void draw_round_fill(u32 x, u32 y, u32 w, u32 h, u32 rad, struct rgb color,
-                     u8 alpha)
+static void round_fill_ex(u32 x, u32 y, u32 w, u32 h, u32 rad, struct rgb color,
+                          u8 alpha, bool hard)
 {
     i32 inner_x;
     i32 inner_y;
@@ -207,19 +210,32 @@ void draw_round_fill(u32 x, u32 y, u32 w, u32 h, u32 rad, struct rgb color,
             }
         }
         blend_band(x, y, w, h, rad, color, alpha,
-                   (i32)x, (i32)y, (i32)(x + w), inner_y);
+                   (i32)x, (i32)y, (i32)(x + w), inner_y, hard);
         blend_band(x, y, w, h, rad, color, alpha,
-                   (i32)x, inner_y + inner_h, (i32)(x + w), (i32)(y + h));
+                   (i32)x, inner_y + inner_h, (i32)(x + w), (i32)(y + h), hard);
         blend_band(x, y, w, h, rad, color, alpha,
-                   (i32)x, inner_y, inner_x, inner_y + inner_h);
+                   (i32)x, inner_y, inner_x, inner_y + inner_h, hard);
         blend_band(x, y, w, h, rad, color, alpha,
-                   inner_x + inner_w, inner_y, (i32)(x + w), inner_y + inner_h);
+                   inner_x + inner_w, inner_y, (i32)(x + w), inner_y + inner_h,
+                   hard);
     } else {
         blend_band(x, y, w, h, rad, color, alpha,
-                   (i32)x, (i32)y, (i32)(x + w), (i32)(y + h));
+                   (i32)x, (i32)y, (i32)(x + w), (i32)(y + h), hard);
     }
     (void)fw;
     (void)fh;
+}
+
+void draw_round_fill(u32 x, u32 y, u32 w, u32 h, u32 rad, struct rgb color,
+                     u8 alpha)
+{
+    round_fill_ex(x, y, w, h, rad, color, alpha, false);
+}
+
+void draw_round_fill_hard(u32 x, u32 y, u32 w, u32 h, u32 rad, struct rgb color,
+                          u8 alpha)
+{
+    round_fill_ex(x, y, w, h, rad, color, alpha, true);
 }
 
 static void frost_sample(u32 x, u32 y, u8 *r, u8 *g, u8 *b)
@@ -1040,8 +1056,9 @@ void draw_window_frame(u32 x, u32 y, u32 w, u32 h, const char *title,
         return;
     }
 
-    draw_glass(x, y, w, h, rad, THEME_GLASS, 90u);
-    draw_round_fill(x, y, w, TITLEBAR_H, rad, focused ? THEME_TITLE : THEME_BG2, 220u);
+    draw_round_fill_hard(x, y, w, h, rad, THEME_GLASS, 240u);
+    draw_round_fill_hard(x, y, w, TITLEBAR_H, rad,
+                         focused ? THEME_TITLE : THEME_BG2, 255u);
     fb_fill_rect(x, y + TITLEBAR_H / 2u, w, TITLEBAR_H - TITLEBAR_H / 2u,
                  (focused ? THEME_TITLE : THEME_BG2).r,
                  (focused ? THEME_TITLE : THEME_BG2).g,
@@ -1391,7 +1408,7 @@ void cursor_flip(u32 x, u32 y)
 
 void draw_panel(u32 x, u32 y, u32 w, u32 h, bool focused)
 {
-    draw_glass(x, y, w, h, THEME_RAD_CARD, THEME_GLASS, 100u);
+    draw_round_fill_hard(x, y, w, h, THEME_RAD_CARD, THEME_GLASS, 240u);
     if (focused) {
         draw_round_fill(x + 2, y + 2, w > 4u ? w - 4u : w, 3, 2, THEME_ACCENT, 255u);
     }

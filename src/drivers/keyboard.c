@@ -16,6 +16,8 @@ static volatile u32 kbd_tail;
 static bool shift_pressed;
 static bool altgr_pressed;
 static bool e0_prefix;
+static bool gui_pressed;
+static bool lctrl_pressed;
 
 /*
  * Scan code Set 1 — layout secuencial (probado). Indices = scancode.
@@ -149,6 +151,26 @@ static void keyboard_irq(struct interrupt_frame *frame)
         return;
     }
 
+    /* Left/Right GUI (Windows / Super). Releases have bit 7 set. */
+    if (extended && (scancode == 0x5B || scancode == 0x5C)) {
+        gui_pressed = true;
+        return;
+    }
+    if (extended && (scancode == 0xDB || scancode == 0xDC)) {
+        gui_pressed = false;
+        return;
+    }
+
+    /* Left Ctrl — fallback for hosts that swallow the Windows key (VBox). */
+    if (!extended && scancode == 0x1D) {
+        lctrl_pressed = true;
+        return;
+    }
+    if (!extended && scancode == 0x9D) {
+        lctrl_pressed = false;
+        return;
+    }
+
     if (scancode & 0x80) {
         return;
     }
@@ -196,6 +218,10 @@ static void keyboard_irq(struct interrupt_frame *frame)
     }
 
     if (character != 0) {
+        if (character == ' ' && (gui_pressed || lctrl_pressed)) {
+            kbd_push(KEY_SPOTLIGHT);
+            return;
+        }
         codepoint = altgr_pressed
             ? keyboard_altgr_codepoint(character)
             : (u32)(u8)character;
@@ -210,6 +236,8 @@ void keyboard_init(void)
     shift_pressed = false;
     altgr_pressed = false;
     e0_prefix = false;
+    gui_pressed = false;
+    lctrl_pressed = false;
 
     /* Do not let a stale ACK be mistaken for the 8042 command byte. */
     kbd_drain_output();
