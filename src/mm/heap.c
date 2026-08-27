@@ -71,7 +71,16 @@ static void heap_coalesce(void)
             continue;
         }
 
-        current->size += (u32)sizeof(struct heap_block) + nxt->size;
+        {
+            u32 grow = (u32)sizeof(struct heap_block);
+
+            if (nxt->size > 0xFFFFFFFFu - grow ||
+                current->size > 0xFFFFFFFFu - (grow + nxt->size)) {
+                current = nxt;
+                continue;
+            }
+            current->size += grow + nxt->size;
+        }
         current->next = nxt->next;
         heap_free_os += (u32)sizeof(struct heap_block);
     }
@@ -109,9 +118,12 @@ static int heap_append_region(u8 *base, size_t bytes)
         u8 *end = (u8 *)tail + sizeof(struct heap_block) + tail->size;
 
         if (end == base) {
-            tail->size += (u32)bytes;
-            heap_free_os += (u32)bytes;
-            return 0;
+            if ((u32)bytes <= 0xFFFFFFFFu - tail->size &&
+                (u32)bytes <= 0xFFFFFFFFu - heap_free_os) {
+                tail->size += (u32)bytes;
+                heap_free_os += (u32)bytes;
+                return 0;
+            }
         }
     }
 

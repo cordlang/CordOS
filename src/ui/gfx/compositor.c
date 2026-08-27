@@ -14,6 +14,14 @@ struct ui_rect {
 static struct ui_rect s_damage;
 static bool s_full;
 
+static u32 add_sat(u32 a, u32 b)
+{
+    if (b > ~0u - a) {
+        return ~0u;
+    }
+    return a + b;
+}
+
 static void rect_union(struct ui_rect *a, u32 x, u32 y, u32 w, u32 h)
 {
     u32 x2;
@@ -32,10 +40,10 @@ static void rect_union(struct ui_rect *a, u32 x, u32 y, u32 w, u32 h)
         a->on = true;
         return;
     }
-    x2 = x + w;
-    y2 = y + h;
-    ax2 = a->x + a->w;
-    ay2 = a->y + a->h;
+    x2 = add_sat(x, w);
+    y2 = add_sat(y, h);
+    ax2 = add_sat(a->x, a->w);
+    ay2 = add_sat(a->y, a->h);
     if (x < a->x) {
         a->x = x;
     }
@@ -50,6 +58,17 @@ static void rect_union(struct ui_rect *a, u32 x, u32 y, u32 w, u32 h)
     }
     a->w = ax2 - a->x;
     a->h = ay2 - a->y;
+}
+
+static u32 clip_span(u32 origin, u32 extent, u32 limit)
+{
+    if (origin >= limit) {
+        return 0;
+    }
+    if (extent > limit - origin) {
+        return limit - origin;
+    }
+    return extent;
 }
 
 void ui_comp_init(void)
@@ -76,28 +95,24 @@ void ui_comp_damage(u32 x, u32 y, u32 w, u32 h)
     }
     if (x >= pad) {
         x -= pad;
-        w += pad;
+        w = add_sat(w, pad);
     } else {
-        w += x;
+        w = add_sat(w, x);
         x = 0;
     }
     if (y >= pad) {
         y -= pad;
-        h += pad;
+        h = add_sat(h, pad);
     } else {
-        h += y;
+        h = add_sat(h, y);
         y = 0;
     }
-    w += pad;
-    h += pad;
-    if (x >= fw || y >= fh) {
+    w = add_sat(w, pad);
+    h = add_sat(h, pad);
+    w = clip_span(x, w, fw);
+    h = clip_span(y, h, fh);
+    if (w == 0 || h == 0) {
         return;
-    }
-    if (x + w > fw) {
-        w = fw - x;
-    }
-    if (y + h > fh) {
-        h = fh - y;
     }
     rect_union(&s_damage, x, y, w, h);
 }

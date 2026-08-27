@@ -31,8 +31,13 @@ bool fb_set_pixel(u32 x, u32 y, u8 r, u8 g, u8 b);
 bool fb_get_pixel(u32 x, u32 y, u8 *r, u8 *g, u8 *b);
 void fb_blend_pixel(u32 x, u32 y, u8 r, u8 g, u8 b, u8 a);
 void fb_fill_rect(u32 x, u32 y, u32 w, u32 h, u8 r, u8 g, u8 b);
+/* Constant-color blend. a==0 is a no-op; a==255 is fb_fill_rect. */
+void fb_blend_rect(u32 x, u32 y, u32 w, u32 h, u8 r, u8 g, u8 b, u8 a);
 void fb_clear(u8 r, u8 g, u8 b);
 void fb_overlay(u8 r, u8 g, u8 b, u8 alpha);
+/* Visible 32bpp pixels of the current compose target for row y; index by x.
+ * NULL if not 32bpp or y is out of range. Stores must be opaque XRGB. */
+u32 *fb_row32(u32 y);
 /* Apply the last fb_overlay to a sampled color (frost, etc.) so glass
  * AA matches the already-dimmed destination instead of the raw photo. */
 void fb_shade_as_overlay(u8 *r, u8 *g, u8 *b);

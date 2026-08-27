@@ -177,17 +177,7 @@ static void round_fill_ex(u32 x, u32 y, u32 w, u32 h, u32 rad, struct rgb color,
     rad = clamp_rad(w, h, rad);
 
     if (rad == 0) {
-        if (alpha == 255u) {
-            fb_fill_rect(x, y, w, h, color.r, color.g, color.b);
-        } else {
-            u32 yy;
-            u32 xx;
-            for (yy = 0; yy < h; ++yy) {
-                for (xx = 0; xx < w; ++xx) {
-                    fb_blend_pixel(x + xx, y + yy, color.r, color.g, color.b, alpha);
-                }
-            }
-        }
+        fb_blend_rect(x, y, w, h, color.r, color.g, color.b, alpha);
         return;
     }
 
@@ -196,19 +186,8 @@ static void round_fill_ex(u32 x, u32 y, u32 w, u32 h, u32 rad, struct rgb color,
     inner_w = (i32)w - (i32)rad * 2 - 2;
     inner_h = (i32)h - (i32)rad * 2 - 2;
     if (inner_w > 0 && inner_h > 0) {
-        if (alpha == 255u) {
-            fb_fill_rect((u32)inner_x, (u32)inner_y, (u32)inner_w, (u32)inner_h,
-                         color.r, color.g, color.b);
-        } else {
-            u32 yy;
-            u32 xx;
-            for (yy = 0; yy < (u32)inner_h; ++yy) {
-                for (xx = 0; xx < (u32)inner_w; ++xx) {
-                    fb_blend_pixel((u32)inner_x + xx, (u32)inner_y + yy,
-                                   color.r, color.g, color.b, alpha);
-                }
-            }
-        }
+        fb_blend_rect((u32)inner_x, (u32)inner_y, (u32)inner_w, (u32)inner_h,
+                      color.r, color.g, color.b, alpha);
         blend_band(x, y, w, h, rad, color, alpha,
                    (i32)x, (i32)y, (i32)(x + w), inner_y, hard);
         blend_band(x, y, w, h, rad, color, alpha,
@@ -650,26 +629,73 @@ void draw_glass(u32 x, u32 y, u32 w, u32 h, u32 rad, struct rgb tint, u8 alpha)
     inner_w = iw - ir * 2 - 2;
     inner_h = ih - ir * 2 - 2;
 
-    if (inner_w > 0 && inner_h > 0) {
-        for (py = inner_y; py < inner_y + inner_h; ++py) {
-            for (px = inner_x; px < inner_x + inner_w; ++px) {
-                glass_pixel((u32)px, (u32)py, tint, alpha, 255u);
-            }
-        }
-    }
     {
         i32 fw = (i32)fb_width();
         i32 fh = (i32)fb_height();
+        i32 y0;
+        i32 x0;
+        i32 y1;
+        i32 x1;
 
-        for (py = iy; py < iy + ih; ++py) {
-            if (py < 0 || py >= fh) {
-                continue;
+        if (inner_w > 0 && inner_h > 0) {
+            u32 inv = 255u - (u32)alpha;
+            u32 tr = (u32)tint.r * (u32)alpha;
+            u32 tg = (u32)tint.g * (u32)alpha;
+            u32 tb = (u32)tint.b * (u32)alpha;
+            i32 iy0 = inner_y;
+            i32 ix0 = inner_x;
+            i32 iy1 = inner_y + inner_h;
+            i32 ix1 = inner_x + inner_w;
+
+            if (iy0 < 0) {
+                iy0 = 0;
             }
-            for (px = ix; px < ix + iw; ++px) {
-                u8 c;
-                if (px < 0 || px >= fw) {
+            if (ix0 < 0) {
+                ix0 = 0;
+            }
+            if (iy1 > fh) {
+                iy1 = fh;
+            }
+            if (ix1 > fw) {
+                ix1 = fw;
+            }
+            for (py = iy0; py < iy1; ++py) {
+                u32 *row = fb_row32((u32)py);
+
+                if (row == NULL) {
+                    for (px = ix0; px < ix1; ++px) {
+                        glass_pixel((u32)px, (u32)py, tint, alpha, 255u);
+                    }
                     continue;
                 }
+                for (px = ix0; px < ix1; ++px) {
+                    u8 fr;
+                    u8 fg;
+                    u8 fb;
+
+                    frost_sample((u32)px, (u32)py, &fr, &fg, &fb);
+                    fb_shade_as_overlay(&fr, &fg, &fb);
+                    row[(u32)px] = 0xFF000000u |
+                        ((((u32)fr * inv + tr) / 255u) << 16) |
+                        ((((u32)fg * inv + tg) / 255u) << 8) |
+                        (((u32)fb * inv + tb) / 255u);
+                }
+            }
+        }
+
+        y0 = (iy < 0) ? 0 : iy;
+        x0 = (ix < 0) ? 0 : ix;
+        y1 = iy + ih;
+        x1 = ix + iw;
+        if (y1 > fh) {
+            y1 = fh;
+        }
+        if (x1 > fw) {
+            x1 = fw;
+        }
+        for (py = y0; py < y1; ++py) {
+            for (px = x0; px < x1; ++px) {
+                u8 c;
                 if (inner_w > 0 && inner_h > 0 &&
                     px >= inner_x && px < inner_x + inner_w &&
                     py >= inner_y && py < inner_y + inner_h) {
@@ -1251,10 +1277,10 @@ static void cursor_save_under(i32 x, i32 y)
     if ((u32)x0 >= fw || (u32)y0 >= fh || w == 0 || h == 0) {
         return;
     }
-    if ((u32)x0 + w > fw) {
+    if (w > fw - (u32)x0) {
         w = fw - (u32)x0;
     }
-    if ((u32)y0 + h > fh) {
+    if (h > fh - (u32)y0) {
         h = fh - (u32)y0;
     }
     for (row = 0; row < h; ++row) {

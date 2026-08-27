@@ -201,6 +201,10 @@ KERNEL64_OBJS := \
 	out/session.o \
 	out/login.o \
 	out/desktop.o \
+	out/desktop_win.o \
+	out/desktop_chrome.o \
+	out/desktop_spot.o \
+	out/desktop_input.o \
 	out/draw.o \
 	out/compositor.o \
 	out/widget.o \
@@ -384,7 +388,15 @@ out/session.o: src/ui/session/session.c $(PUB_HDRS) | build
 	$(CC64) $(CFLAGS64) -c $< -o $@
 out/login.o: src/ui/login/login.c src/include/ui/brand.h $(PUB_HDRS) | build
 	$(CC64) $(CFLAGS64) -c $< -o $@
-out/desktop.o: src/ui/desktop/desktop.c $(PUB_HDRS) | build
+out/desktop.o: src/ui/desktop/desktop.c src/ui/desktop/desktop_priv.h $(PUB_HDRS) | build
+	$(CC64) $(CFLAGS64) -c $< -o $@
+out/desktop_win.o: src/ui/desktop/desktop_win.c src/ui/desktop/desktop_priv.h $(PUB_HDRS) | build
+	$(CC64) $(CFLAGS64) -c $< -o $@
+out/desktop_chrome.o: src/ui/desktop/desktop_chrome.c src/ui/desktop/desktop_priv.h $(PUB_HDRS) | build
+	$(CC64) $(CFLAGS64) -c $< -o $@
+out/desktop_spot.o: src/ui/desktop/desktop_spot.c src/ui/desktop/desktop_priv.h $(PUB_HDRS) | build
+	$(CC64) $(CFLAGS64) -c $< -o $@
+out/desktop_input.o: src/ui/desktop/desktop_input.c src/ui/desktop/desktop_priv.h $(PUB_HDRS) | build
 	$(CC64) $(CFLAGS64) -c $< -o $@
 out/draw.o: src/ui/gfx/draw.c $(PUB_HDRS) | build
 	$(CC64) $(CFLAGS64) -c $< -o $@

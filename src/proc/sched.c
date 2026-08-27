@@ -21,6 +21,7 @@ volatile u32 sched_enabled_os = 0;
 
 static volatile u32 sched_lock_os = 0;
 static u32 rr_index_os = 0;
+static struct task *sched_zombie_os;
 
 extern struct task task_table_os[TASK_MAX_OS];
 
@@ -35,6 +36,7 @@ void sched_init(void)
     sched_enabled_os = 0;
     sched_lock_os = 0;
     rr_index_os = 0;
+    sched_zombie_os = NULL;
 }
 
 void sched_start(void)
@@ -110,17 +112,24 @@ void schedule(void)
     current_task_os = next;
     tss_load_task_rsp0(next);
 
+    /* Locals after switch_context belong to the resumed stack, not the
+     * task that just yielded. Stash a dying prev so the incoming task
+     * can free it. */
+    if (prev->state == TASK_DEAD && prev->kstack_base != NULL) {
+        sched_zombie_os = prev;
+    }
+
     switch_context(&prev->kstack_top, next->kstack_top);
 
-    /*
-     * Running on next's stack now — safe to free prev if it exited.
-     * Idle (slot 0) has kstack_base == NULL and is never TASK_DEAD.
-     */
     reap = NULL;
-    if (prev->state == TASK_DEAD && prev->kstack_base != NULL) {
-        reap = prev->kstack_base;
-        prev->kstack_base = NULL;
-        prev->kstack_top = NULL;
+    if (sched_zombie_os != NULL &&
+        sched_zombie_os != current_task_os &&
+        sched_zombie_os->state == TASK_DEAD &&
+        sched_zombie_os->kstack_base != NULL) {
+        reap = sched_zombie_os->kstack_base;
+        sched_zombie_os->kstack_base = NULL;
+        sched_zombie_os->kstack_top = NULL;
+        sched_zombie_os = NULL;
     }
 
     /* Resumed task continues here — always re-enable IRQs (preempt from IRQ0

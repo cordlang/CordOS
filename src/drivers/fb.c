@@ -62,6 +62,22 @@ static u8 ov_r;
 static u8 ov_g;
 static u8 ov_b;
 static u8 ov_a;
+static u8 *ov_done_at;
+static u8 ov_done_r;
+static u8 ov_done_g;
+static u8 ov_done_b;
+static u8 ov_done_a;
+static bool ov_live;
+
+/* Cached cover-scale for frost/blit. Invalidated when src or FB size changes. */
+static u32 cov_sw;
+static u32 cov_sh;
+static u32 cov_fw;
+static u32 cov_fh;
+static u32 cov_num;
+static u32 cov_den;
+static u32 cov_x0;
+static u32 cov_y0;
 
 static u32 fb_pxb(void)
 {
@@ -74,6 +90,32 @@ static u32 fb_pxb(void)
 static u32 fb_pack32(u8 r, u8 g, u8 b)
 {
     return 0xFF000000u | ((u32)r << 16) | ((u32)g << 8) | (u32)b;
+}
+
+static void fb_note_plot(void)
+{
+    ov_live = false;
+}
+
+static bool fb_clip_xy(u32 x, u32 y, u32 w, u32 h, u32 *x0, u32 *y0, u32 *x1,
+                       u32 *y1)
+{
+    if (!fb_ready || w == 0 || h == 0 || x >= fb_w || y >= fb_h) {
+        return false;
+    }
+    *x0 = x;
+    *y0 = y;
+    *x1 = (w > fb_w - x) ? fb_w : (x + w);
+    *y1 = (h > fb_h - y) ? fb_h : (y + h);
+    return *x0 < *x1 && *y0 < *y1;
+}
+
+/* Overlay / fade veils: linear 8-bit mix. Gamma-correct blend is 2 lin + 1
+ * srgb LUT per channel (~6–9M lookups at 1080p). Dark veils (alpha 18–110)
+ * stay within ~1–2 8-bit levels of gamma; glass/text keep gamma_mix. */
+static u8 lin_mix(u8 src, u8 dst, u8 a)
+{
+    return (u8)(((u32)src * (u32)a + (u32)dst * (255u - (u32)a)) / 255u);
 }
 
 static u32 fb_vis_off(u32 x, u32 y)
@@ -116,6 +158,30 @@ static void fb_halo_all(u8 *base)
         return;
     }
     for (y = 0; y < fb_h; ++y) {
+        fb_halo_row(base, y);
+    }
+}
+
+static void fb_seal_rows(u8 *base, u32 y0, u32 y1)
+{
+    u32 y;
+
+    if (fb_bits != 32 || base == NULL || y0 >= y1) {
+        return;
+    }
+    if (y1 > fb_h) {
+        y1 = fb_h;
+    }
+    if (fb_x0 > 0) {
+        for (y = y0; y < y1; ++y) {
+            u32 *raw = (u32 *)(base + y * fb_pitch_bytes);
+
+            raw[0] = raw[fb_x0];
+            raw[fb_x0 + fb_w] = raw[fb_x0 + fb_w - 1u];
+        }
+        return;
+    }
+    for (y = y0; y < y1; ++y) {
         fb_halo_row(base, y);
     }
 }
@@ -216,6 +282,7 @@ bool fb_set_pixel(u32 x, u32 y, u8 r, u8 g, u8 b)
     if (!fb_ready || x >= fb_w || y >= fb_h) {
         return false;
     }
+    fb_note_plot();
     fb_put_pixel_raw(x, y, r, g, b);
     return true;
 }
@@ -260,29 +327,55 @@ static u8 gamma_mix(u8 src, u8 dst, u8 a)
     return gamma_lin_to_srgb[lin];
 }
 
+static u32 gamma_over32(u32 dst, u8 r, u8 g, u8 b, u8 a)
+{
+    u8 nr = gamma_mix(r, (u8)((dst >> 16) & 0xFFu), a);
+    u8 ng = gamma_mix(g, (u8)((dst >> 8) & 0xFFu), a);
+    u8 nb = gamma_mix(b, (u8)(dst & 0xFFu), a);
+    return fb_pack32(nr, ng, nb);
+}
+
+static u32 lin_over32(u32 dst, u32 sr, u32 sg, u32 sb, u32 inv)
+{
+    u8 nr = (u8)((sr + ((dst >> 16) & 0xFFu) * inv) / 255u);
+    u8 ng = (u8)((sg + ((dst >> 8) & 0xFFu) * inv) / 255u);
+    u8 nb = (u8)((sb + (dst & 0xFFu) * inv) / 255u);
+    return fb_pack32(nr, ng, nb);
+}
+
+u32 *fb_row32(u32 y)
+{
+    if (!fb_ready || fb_base == NULL || fb_bits != 32 || y >= fb_h) {
+        return NULL;
+    }
+    fb_note_plot();
+    return fb_vis32(fb_base, y);
+}
+
 void fb_blend_pixel(u32 x, u32 y, u8 r, u8 g, u8 b, u8 a)
 {
     if (a == 0) {
         return;
     }
-    if (a == 255u) {
-        fb_set_pixel(x, y, r, g, b);
-        return;
-    }
     if (!fb_ready || x >= fb_w || y >= fb_h || fb_base == NULL) {
         return;
     }
+    fb_note_plot();
 
     if (fb_bits == 32) {
         u32 *p = (u32 *)(fb_base + fb_vis_off(x, y));
-        u32 dst = *p;
-        u8 nr = gamma_mix(r, (u8)((dst >> 16) & 0xFFu), a);
-        u8 ng = gamma_mix(g, (u8)((dst >> 8) & 0xFFu), a);
-        u8 nb = gamma_mix(b, (u8)(dst & 0xFFu), a);
-        *p = fb_pack32(nr, ng, nb);
+        if (a == 255u) {
+            *p = fb_pack32(r, g, b);
+        } else {
+            *p = gamma_over32(*p, r, g, b, a);
+        }
         return;
     }
 
+    if (a == 255u) {
+        fb_put_pixel_raw(x, y, r, g, b);
+        return;
+    }
     {
         u8 dr;
         u8 dg;
@@ -290,8 +383,8 @@ void fb_blend_pixel(u32 x, u32 y, u8 r, u8 g, u8 b, u8 a)
         if (!fb_get_pixel(x, y, &dr, &dg, &db)) {
             return;
         }
-        fb_set_pixel(x, y, gamma_mix(r, dr, a), gamma_mix(g, dg, a),
-                     gamma_mix(b, db, a));
+        fb_put_pixel_raw(x, y, gamma_mix(r, dr, a), gamma_mix(g, dg, a),
+                         gamma_mix(b, db, a));
     }
 }
 
@@ -299,42 +392,101 @@ void fb_fill_rect(u32 x, u32 y, u32 w, u32 h, u8 r, u8 g, u8 b)
 {
     u32 yy;
     u32 xx;
+    u32 x0;
+    u32 y0;
     u32 x2;
     u32 y2;
 
-    if (!fb_ready || w == 0 || h == 0) {
+    if (!fb_clip_xy(x, y, w, h, &x0, &y0, &x2, &y2)) {
         return;
     }
-
-    x2 = x + w;
-    y2 = y + h;
-    if (x >= fb_w || y >= fb_h) {
-        return;
-    }
-    if (x2 > fb_w) {
-        x2 = fb_w;
-    }
-    if (y2 > fb_h) {
-        y2 = fb_h;
-    }
+    fb_note_plot();
 
     if (fb_bits == 32) {
         u32 color = fb_pack32(r, g, b);
-        for (yy = y; yy < y2; ++yy) {
+        for (yy = y0; yy < y2; ++yy) {
             u32 *row = fb_vis32(fb_base, yy);
-            for (xx = x; xx < x2; ++xx) {
+            xx = x0;
+            while (xx + 8u <= x2) {
+                row[xx] = color;
+                row[xx + 1u] = color;
+                row[xx + 2u] = color;
+                row[xx + 3u] = color;
+                row[xx + 4u] = color;
+                row[xx + 5u] = color;
+                row[xx + 6u] = color;
+                row[xx + 7u] = color;
+                xx += 8u;
+            }
+            for (; xx < x2; ++xx) {
                 row[xx] = color;
             }
-            if (x == 0 || x2 >= fb_w) {
-                fb_halo_row(fb_base, yy);
-            }
+        }
+        if (x0 == 0 || x2 >= fb_w) {
+            fb_seal_rows(fb_base, y0, y2);
         }
         return;
     }
 
-    for (yy = y; yy < y2; ++yy) {
-        for (xx = x; xx < x2; ++xx) {
+    for (yy = y0; yy < y2; ++yy) {
+        for (xx = x0; xx < x2; ++xx) {
             fb_put_pixel_raw(xx, yy, r, g, b);
+        }
+    }
+}
+
+void fb_blend_rect(u32 x, u32 y, u32 w, u32 h, u8 r, u8 g, u8 b, u8 a)
+{
+    u32 yy;
+    u32 xx;
+    u32 x0;
+    u32 y0;
+    u32 x2;
+    u32 y2;
+
+    if (a == 0) {
+        return;
+    }
+    if (a == 255u) {
+        fb_fill_rect(x, y, w, h, r, g, b);
+        return;
+    }
+    if (!fb_clip_xy(x, y, w, h, &x0, &y0, &x2, &y2)) {
+        return;
+    }
+    fb_note_plot();
+
+    if (fb_bits == 32) {
+        for (yy = y0; yy < y2; ++yy) {
+            u32 *row = fb_vis32(fb_base, yy);
+            xx = x0;
+            while (xx + 4u <= x2) {
+                row[xx] = gamma_over32(row[xx], r, g, b, a);
+                row[xx + 1u] = gamma_over32(row[xx + 1u], r, g, b, a);
+                row[xx + 2u] = gamma_over32(row[xx + 2u], r, g, b, a);
+                row[xx + 3u] = gamma_over32(row[xx + 3u], r, g, b, a);
+                xx += 4u;
+            }
+            for (; xx < x2; ++xx) {
+                row[xx] = gamma_over32(row[xx], r, g, b, a);
+            }
+        }
+        if (x0 == 0 || x2 >= fb_w) {
+            fb_seal_rows(fb_base, y0, y2);
+        }
+        return;
+    }
+
+    for (yy = y0; yy < y2; ++yy) {
+        for (xx = x0; xx < x2; ++xx) {
+            u8 dr;
+            u8 dg;
+            u8 db;
+            if (!fb_get_pixel(xx, yy, &dr, &dg, &db)) {
+                continue;
+            }
+            fb_put_pixel_raw(xx, yy, gamma_mix(r, dr, a), gamma_mix(g, dg, a),
+                             gamma_mix(b, db, a));
         }
     }
 }
@@ -348,6 +500,10 @@ void fb_overlay(u8 r, u8 g, u8 b, u8 alpha)
 {
     u32 y;
     u32 x;
+    u32 sr;
+    u32 sg;
+    u32 sb;
+    u32 inv;
 
     if (!fb_ready || fb_base == NULL || alpha == 0) {
         return;
@@ -356,31 +512,73 @@ void fb_overlay(u8 r, u8 g, u8 b, u8 alpha)
     ov_g = g;
     ov_b = b;
     ov_a = alpha;
-    if (alpha == 255u) {
-        fb_fill_rect(0, 0, fb_w, fb_h, r, g, b);
+    if (ov_live && ov_done_at == fb_base && ov_done_r == r && ov_done_g == g &&
+        ov_done_b == b && ov_done_a == alpha) {
         return;
     }
+    if (alpha == 255u) {
+        fb_fill_rect(0, 0, fb_w, fb_h, r, g, b);
+        ov_done_at = fb_base;
+        ov_done_r = r;
+        ov_done_g = g;
+        ov_done_b = b;
+        ov_done_a = alpha;
+        ov_live = true;
+        return;
+    }
+
+    sr = (u32)r * (u32)alpha;
+    sg = (u32)g * (u32)alpha;
+    sb = (u32)b * (u32)alpha;
+    inv = 255u - (u32)alpha;
 
     if (fb_bits == 32) {
         for (y = 0; y < fb_h; ++y) {
             u32 *row = fb_vis32(fb_base, y);
-            for (x = 0; x < fb_w; ++x) {
-                u32 dst = row[x];
-                u8 nr = gamma_mix(r, (u8)((dst >> 16) & 0xFFu), alpha);
-                u8 ng = gamma_mix(g, (u8)((dst >> 8) & 0xFFu), alpha);
-                u8 nb = gamma_mix(b, (u8)(dst & 0xFFu), alpha);
-                row[x] = fb_pack32(nr, ng, nb);
+            x = 0;
+            while (x + 8u <= fb_w) {
+                row[x] = lin_over32(row[x], sr, sg, sb, inv);
+                row[x + 1u] = lin_over32(row[x + 1u], sr, sg, sb, inv);
+                row[x + 2u] = lin_over32(row[x + 2u], sr, sg, sb, inv);
+                row[x + 3u] = lin_over32(row[x + 3u], sr, sg, sb, inv);
+                row[x + 4u] = lin_over32(row[x + 4u], sr, sg, sb, inv);
+                row[x + 5u] = lin_over32(row[x + 5u], sr, sg, sb, inv);
+                row[x + 6u] = lin_over32(row[x + 6u], sr, sg, sb, inv);
+                row[x + 7u] = lin_over32(row[x + 7u], sr, sg, sb, inv);
+                x += 8u;
+            }
+            for (; x < fb_w; ++x) {
+                row[x] = lin_over32(row[x], sr, sg, sb, inv);
             }
         }
         fb_seal_edges();
+        ov_done_at = fb_base;
+        ov_done_r = r;
+        ov_done_g = g;
+        ov_done_b = b;
+        ov_done_a = alpha;
+        ov_live = true;
         return;
     }
 
     for (y = 0; y < fb_h; ++y) {
         for (x = 0; x < fb_w; ++x) {
-            fb_blend_pixel(x, y, r, g, b, alpha);
+            u8 dr;
+            u8 dg;
+            u8 db;
+            if (!fb_get_pixel(x, y, &dr, &dg, &db)) {
+                continue;
+            }
+            fb_put_pixel_raw(x, y, lin_mix(r, dr, alpha), lin_mix(g, dg, alpha),
+                             lin_mix(b, db, alpha));
         }
     }
+    ov_done_at = fb_base;
+    ov_done_r = r;
+    ov_done_g = g;
+    ov_done_b = b;
+    ov_done_a = alpha;
+    ov_live = true;
 }
 
 void fb_hline(u32 x, u32 y, u32 w, u8 r, u8 g, u8 b)
@@ -749,9 +947,9 @@ void fb_shade_as_overlay(u8 *r, u8 *g, u8 *b)
         *b = ov_b;
         return;
     }
-    *r = gamma_mix(ov_r, *r, ov_a);
-    *g = gamma_mix(ov_g, *g, ov_a);
-    *b = gamma_mix(ov_b, *b, ov_a);
+    *r = lin_mix(ov_r, *r, ov_a);
+    *g = lin_mix(ov_g, *g, ov_a);
+    *b = lin_mix(ov_b, *b, ov_a);
 }
 
 static u8 *fb_visible_page(void)
@@ -765,6 +963,7 @@ static u8 *fb_visible_page(void)
 void fb_compose_begin(void)
 {
     /* Full background blits reset the overlay; partial redraws must retain it. */
+    fb_note_plot();
     if (fb_back != NULL) {
         fb_base = fb_back;
         fb_scene_dirty = true;
@@ -809,20 +1008,17 @@ static void fb_store_layer(u8 *dst, const u8 *src)
 {
     size_t bytes = (size_t)fb_layer_bytes();
     u32 y;
-    u32 x;
 
     /* Bottom-up so a mid-copy host snapshot is not stuck at y=h-128. */
     if (fb_bits == 32) {
         for (y = fb_h; y > 0; ) {
+            u32 *d;
             const u32 *s;
-            volatile u32 *d;
 
             --y;
             s = fb_vis32((u8 *)src, y);
-            d = (volatile u32 *)fb_vis32(dst, y);
-            for (x = 0; x < fb_w; ++x) {
-                d[x] = s[x];
-            }
+            d = fb_vis32(dst, y);
+            memcpy(d, s, (size_t)fb_w * 4u);
         }
         return;
     }
@@ -881,6 +1077,7 @@ void fb_present_dimmed(u8 black_alpha)
 {
     u32 y;
     u32 x;
+    u32 inv;
 
     if (!fb_compose_ready()) {
         return;
@@ -892,18 +1089,27 @@ void fb_present_dimmed(u8 black_alpha)
     if (fb_bits == 32) {
         u8 *page = fb_hidden_page();
 
+        inv = 255u - (u32)black_alpha;
         for (y = 0; y < fb_h; ++y) {
             const u32 *src = fb_vis32(fb_back, y);
             u32 *dst = fb_vis32(page, y);
-            for (x = 0; x < fb_w; ++x) {
-                u32 p = src[x];
-                u8 r = gamma_mix(0, (u8)((p >> 16) & 0xFFu), black_alpha);
-                u8 g = gamma_mix(0, (u8)((p >> 8) & 0xFFu), black_alpha);
-                u8 b = gamma_mix(0, (u8)(p & 0xFFu), black_alpha);
-                dst[x] = fb_pack32(r, g, b);
+            x = 0;
+            while (x + 8u <= fb_w) {
+                dst[x] = lin_over32(src[x], 0, 0, 0, inv);
+                dst[x + 1u] = lin_over32(src[x + 1u], 0, 0, 0, inv);
+                dst[x + 2u] = lin_over32(src[x + 2u], 0, 0, 0, inv);
+                dst[x + 3u] = lin_over32(src[x + 3u], 0, 0, 0, inv);
+                dst[x + 4u] = lin_over32(src[x + 4u], 0, 0, 0, inv);
+                dst[x + 5u] = lin_over32(src[x + 5u], 0, 0, 0, inv);
+                dst[x + 6u] = lin_over32(src[x + 6u], 0, 0, 0, inv);
+                dst[x + 7u] = lin_over32(src[x + 7u], 0, 0, 0, inv);
+                x += 8u;
             }
-            fb_halo_row(page, y);
+            for (; x < fb_w; ++x) {
+                dst[x] = lin_over32(src[x], 0, 0, 0, inv);
+            }
         }
+        fb_seal_page(page);
         fb_flip_hidden();
         fb_scene_dirty = false;
         fb_base = fb_visible_page();
@@ -919,6 +1125,8 @@ void fb_present_dimmed(u8 black_alpha)
 void fb_compose_present_rect(u32 x, u32 y, u32 w, u32 h)
 {
     u32 yy;
+    u32 x0;
+    u32 y0;
     u32 x2;
     u32 y2;
     u32 copy;
@@ -935,23 +1143,15 @@ void fb_compose_present_rect(u32 x, u32 y, u32 w, u32 h)
         return;
     }
 
-    x2 = x + w;
-    y2 = y + h;
-    if (x >= fb_w || y >= fb_h) {
+    if (!fb_clip_xy(x, y, w, h, &x0, &y0, &x2, &y2)) {
         fb_compose_end();
         return;
     }
-    if (x2 > fb_w) {
-        x2 = fb_w;
-    }
-    if (y2 > fb_h) {
-        y2 = fb_h;
-    }
     {
-        u32 hx = x + fb_x0;
+        u32 hx = x0 + fb_x0;
         u32 hx2 = x2 + fb_x0;
 
-        if (fb_x0 > 0 && x == 0) {
+        if (fb_x0 > 0 && x0 == 0) {
             hx = 0;
         }
         if (x2 >= fb_w) {
@@ -961,7 +1161,7 @@ void fb_compose_present_rect(u32 x, u32 y, u32 w, u32 h)
         {
             u8 *vis = fb_visible_page();
 
-            for (yy = y; yy < y2; ++yy) {
+            for (yy = y0; yy < y2; ++yy) {
                 u32 off = yy * fb_pitch_bytes + hx * bpp;
                 memcpy(vis + off, fb_back + off, copy);
             }
@@ -1003,9 +1203,7 @@ bool fb_present_sprite_rect(u32 rx, u32 ry, u32 rw, u32 rh,
         u32 *out = fb_sprite_stage + (size_t)row * rw;
         i32 srow;
 
-        for (col = 0; col < rw; ++col) {
-            out[col] = scene[col];
-        }
+        memcpy(out, scene, (size_t)rw * 4u);
 
         if (rgba == NULL) {
             continue;
@@ -1045,11 +1243,7 @@ bool fb_present_sprite_rect(u32 rx, u32 ry, u32 rw, u32 rh,
 
         for (row = 0; row < rh; ++row) {
             const u32 *s = fb_sprite_stage + (size_t)row * rw;
-            volatile u32 *d = (volatile u32 *)(fb_vis32(vis, ry + row) + rx);
-
-            for (col = 0; col < rw; ++col) {
-                d[col] = s[col];
-            }
+        memcpy(fb_vis32(vis, ry + row) + rx, s, (size_t)rw * 4u);
         }
     }
 
@@ -1076,6 +1270,7 @@ void fb_blend_to_front(const u8 *from, u8 amount)
     u32 y;
     u32 x;
     u32 inv;
+    u32 amt;
 
     if (!fb_compose_ready() || from == NULL) {
         return;
@@ -1094,7 +1289,8 @@ void fb_blend_to_front(const u8 *from, u8 amount)
         fb_base = fb_visible_page();
         return;
     }
-    inv = 255u - (u32)amount;
+    amt = (u32)amount;
+    inv = 255u - amt;
     if (fb_bits == 32) {
         u8 *page = fb_hidden_page();
 
@@ -1102,19 +1298,46 @@ void fb_blend_to_front(const u8 *from, u8 amount)
             const u32 *a = fb_vis32((u8 *)from, y);
             const u32 *b = fb_vis32(fb_back, y);
             u32 *out = fb_vis32(page, y);
-            for (x = 0; x < fb_w; ++x) {
+            x = 0;
+            while (x + 4u <= fb_w) {
+                u32 pa;
+                u32 pb;
+                pa = a[x];
+                pb = b[x];
+                out[x] = fb_pack32(
+                    (u8)((((pa >> 16) & 0xFFu) * inv + ((pb >> 16) & 0xFFu) * amt) / 255u),
+                    (u8)((((pa >> 8) & 0xFFu) * inv + ((pb >> 8) & 0xFFu) * amt) / 255u),
+                    (u8)(((pa & 0xFFu) * inv + (pb & 0xFFu) * amt) / 255u));
+                pa = a[x + 1u];
+                pb = b[x + 1u];
+                out[x + 1u] = fb_pack32(
+                    (u8)((((pa >> 16) & 0xFFu) * inv + ((pb >> 16) & 0xFFu) * amt) / 255u),
+                    (u8)((((pa >> 8) & 0xFFu) * inv + ((pb >> 8) & 0xFFu) * amt) / 255u),
+                    (u8)(((pa & 0xFFu) * inv + (pb & 0xFFu) * amt) / 255u));
+                pa = a[x + 2u];
+                pb = b[x + 2u];
+                out[x + 2u] = fb_pack32(
+                    (u8)((((pa >> 16) & 0xFFu) * inv + ((pb >> 16) & 0xFFu) * amt) / 255u),
+                    (u8)((((pa >> 8) & 0xFFu) * inv + ((pb >> 8) & 0xFFu) * amt) / 255u),
+                    (u8)(((pa & 0xFFu) * inv + (pb & 0xFFu) * amt) / 255u));
+                pa = a[x + 3u];
+                pb = b[x + 3u];
+                out[x + 3u] = fb_pack32(
+                    (u8)((((pa >> 16) & 0xFFu) * inv + ((pb >> 16) & 0xFFu) * amt) / 255u),
+                    (u8)((((pa >> 8) & 0xFFu) * inv + ((pb >> 8) & 0xFFu) * amt) / 255u),
+                    (u8)(((pa & 0xFFu) * inv + (pb & 0xFFu) * amt) / 255u));
+                x += 4u;
+            }
+            for (; x < fb_w; ++x) {
                 u32 pa = a[x];
                 u32 pb = b[x];
-                u8 r = (u8)((((pa >> 16) & 0xFFu) * inv +
-                             ((pb >> 16) & 0xFFu) * (u32)amount) / 255u);
-                u8 g = (u8)((((pa >> 8) & 0xFFu) * inv +
-                             ((pb >> 8) & 0xFFu) * (u32)amount) / 255u);
-                u8 bl = (u8)(((pa & 0xFFu) * inv +
-                              (pb & 0xFFu) * (u32)amount) / 255u);
-                out[x] = fb_pack32(r, g, bl);
+                out[x] = fb_pack32(
+                    (u8)((((pa >> 16) & 0xFFu) * inv + ((pb >> 16) & 0xFFu) * amt) / 255u),
+                    (u8)((((pa >> 8) & 0xFFu) * inv + ((pb >> 8) & 0xFFu) * amt) / 255u),
+                    (u8)(((pa & 0xFFu) * inv + (pb & 0xFFu) * amt) / 255u));
             }
-            fb_halo_row(page, y);
         }
+        fb_seal_page(page);
         fb_flip_hidden();
         fb_scene_dirty = false;
         fb_base = fb_visible_page();
@@ -1155,6 +1378,8 @@ void fb_layer_capture(u8 *layer)
 void fb_layer_restore_rect(const u8 *layer, u32 x, u32 y, u32 w, u32 h)
 {
     u32 yy;
+    u32 x0;
+    u32 y0;
     u32 x2;
     u32 y2;
     u32 copy;
@@ -1169,29 +1394,21 @@ void fb_layer_restore_rect(const u8 *layer, u32 x, u32 y, u32 w, u32 h)
         return;
     }
 
-    x2 = x + w;
-    y2 = y + h;
-    if (x >= fb_w || y >= fb_h) {
+    if (!fb_clip_xy(x, y, w, h, &x0, &y0, &x2, &y2)) {
         return;
     }
-    if (x2 > fb_w) {
-        x2 = fb_w;
-    }
-    if (y2 > fb_h) {
-        y2 = fb_h;
-    }
     {
-        u32 hx = x + fb_x0;
+        u32 hx = x0 + fb_x0;
         u32 hx2 = x2 + fb_x0;
 
-        if (fb_x0 > 0 && x == 0) {
+        if (fb_x0 > 0 && x0 == 0) {
             hx = 0;
         }
         if (x2 >= fb_w) {
             hx2 = fb_pitch_bytes / bpp;
         }
         copy = (hx2 - hx) * bpp;
-        for (yy = y; yy < y2; ++yy) {
+        for (yy = y0; yy < y2; ++yy) {
             u32 off = yy * fb_pitch_bytes + hx * bpp;
             memcpy(fb_base + off, layer + off, copy);
         }
@@ -1205,6 +1422,15 @@ static void fb_cover_params(u32 src_w, u32 src_h, u32 *num, u32 *den,
     u32 scale_den;
     u32 cropped_w;
     u32 cropped_h;
+
+    if (src_w == cov_sw && src_h == cov_sh && fb_w == cov_fw && fb_h == cov_fh &&
+        cov_den != 0) {
+        *num = cov_num;
+        *den = cov_den;
+        *src_x0 = cov_x0;
+        *src_y0 = cov_y0;
+        return;
+    }
 
     /* Cover = larger scale so the photo always fills the FB (no 1px bars). */
     if ((u64)fb_w * (u64)src_h >= (u64)fb_h * (u64)src_w) {
@@ -1226,6 +1452,14 @@ static void fb_cover_params(u32 src_w, u32 src_h, u32 *num, u32 *den,
                   : 0;
     *num = scale_num;
     *den = scale_den;
+    cov_sw = src_w;
+    cov_sh = src_h;
+    cov_fw = fb_w;
+    cov_fh = fb_h;
+    cov_num = scale_num;
+    cov_den = scale_den;
+    cov_x0 = *src_x0;
+    cov_y0 = *src_y0;
 }
 
 void fb_cover_src_xy(u32 src_w, u32 src_h, u32 dx, u32 dy, u32 *sx, u32 *sy)
@@ -1289,13 +1523,23 @@ void fb_blit_rgb_cover(const u8 *rgb, u32 src_w, u32 src_h)
         return;
     }
     ov_a = 0;
+    fb_note_plot();
 
     /* Crisp 1:1 when wallpaper matches the active framebuffer. */
     if (fb_bits == 32 && src_w == fb_w && src_h == fb_h) {
         for (y = 0; y < fb_h; ++y) {
             u32 *row = fb_vis32(fb_base, y);
             const u8 *src_row = rgb + y * src_w * 3u;
-            for (x = 0; x < fb_w; ++x) {
+            x = 0;
+            while (x + 4u <= fb_w) {
+                const u8 *src = src_row + x * 3u;
+                row[x] = fb_pack32(src[0], src[1], src[2]);
+                row[x + 1u] = fb_pack32(src[3], src[4], src[5]);
+                row[x + 2u] = fb_pack32(src[6], src[7], src[8]);
+                row[x + 3u] = fb_pack32(src[9], src[10], src[11]);
+                x += 4u;
+            }
+            for (; x < fb_w; ++x) {
                 const u8 *src = src_row + x * 3u;
                 row[x] = fb_pack32(src[0], src[1], src[2]);
             }
@@ -1310,17 +1554,20 @@ void fb_blit_rgb_cover(const u8 *rgb, u32 src_w, u32 src_h)
         for (y = 0; y < fb_h; ++y) {
             u32 *row = fb_vis32(fb_base, y);
             u32 sy = src_y0 + (y * scale_den) / scale_num;
+            u32 sx = src_x0;
+            u32 acc = 0;
             if (sy >= src_h) {
                 sy = src_h - 1u;
             }
             for (x = 0; x < fb_w; ++x) {
-                u32 sx = src_x0 + (x * scale_den) / scale_num;
-                const u8 *p;
-                if (sx >= src_w) {
-                    sx = src_w - 1u;
-                }
-                p = rgb + (sy * src_w + sx) * 3u;
+                u32 sxc = (sx >= src_w) ? (src_w - 1u) : sx;
+                const u8 *p = rgb + (sy * src_w + sxc) * 3u;
                 row[x] = fb_pack32(p[0], p[1], p[2]);
+                acc += scale_den;
+                while (acc >= scale_num) {
+                    acc -= scale_num;
+                    ++sx;
+                }
             }
         }
         fb_seal_edges();
