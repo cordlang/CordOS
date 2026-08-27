@@ -5,6 +5,8 @@
 #include "string.h"
 #include "utf8.h"
 
+extern const unsigned char user_hello_elf_start[];
+
 static void fail(const char *why)
 {
     serial_write("kselftest FAIL: ");
@@ -76,6 +78,11 @@ void kselftest_run(void)
 
     if (kmalloc((size_t)-1) != NULL) {
         fail("kmalloc overflow");
+    }
+
+    if (user_hello_elf_start[0] != 0x7Fu || user_hello_elf_start[1] != 'E' ||
+        user_hello_elf_start[2] != 'L' || user_hello_elf_start[3] != 'F') {
+        fail("embedded user ELF");
     }
 
     serial_write("kselftest: ok\n");

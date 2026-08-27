@@ -145,8 +145,10 @@ void scheduler_on_tick(void)
 {
     ++scheduler_ticks_os;
     /*
-     * Preempt from IRQ0 is disabled for now: switching away mid-interrupt
-     * without iret left IF=0 and killed keyboard input. Cooperative yield OK.
+     * IRQ0 already got PIC EOI (isr64). Switching here used to leave IF=0
+     * because the interrupt gate never iret'd; schedule() sti's on resume.
      */
-    (void)sched_enabled_os;
+    if (sched_enabled_os) {
+        schedule();
+    }
 }

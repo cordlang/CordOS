@@ -20,6 +20,10 @@ u64 vmm_get_physical(u64 virtual_addr);
 int vmm_page_mapped(u64 virtual_addr);
 /* Present and PAGE_USER at the leaf (and 2MiB PDE). Syscall copies. */
 int vmm_page_user(u64 virtual_addr);
+/* Map `len` bytes at `va` (page-aligned) as user. Fails if any page is
+ * already a kernel mapping. extra_flags is PAGE_WRITE or 0. */
+int vmm_map_user_anon(u64 va, u64 len, u32 extra_flags);
+void vmm_unmap_user_anon(u64 va, u64 len);
 #else
 extern volatile u32 page_directory_os;
 

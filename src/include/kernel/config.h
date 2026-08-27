@@ -5,7 +5,7 @@
 
 /*
  * Datos globales del sistema.
- * Valores "temporal" a proposito: se iran reemplazando fase a fase.
+ * Semver de producto: 0.x = desktop usable, userland aún mínimo.
  */
 extern const char *name_os;
 extern const char *version_os;

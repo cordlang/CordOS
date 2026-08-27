@@ -68,7 +68,9 @@ void page_fault_handler(struct interrupt_frame *frame)
     if ((frame->err_code & 0x4) != 0 &&
         current_task_os != NULL &&
         current_task_os->pid != 0) {
-        serial_write("page_fault: user — kill task\n");
+        serial_write("page_fault: user — kill task cr2=");
+        serial_print_hex((u32)fault_addr);
+        serial_write("\n");
         task_exit();
     }
     panic("page fault no recuperable");

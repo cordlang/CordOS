@@ -185,6 +185,8 @@ KERNEL64_OBJS := \
 	out/task.o \
 	out/sched.o \
 	out/user.o \
+	out/elf64.o \
+	out/user_hello_blob.o \
 	out/switch.o \
 	out/syscall.o \
 	out/syscall_entry.o \
@@ -298,6 +300,8 @@ out/task.o: src/proc/task.c $(PUB_HDRS) | build
 out/sched.o: src/proc/sched.c $(PUB_HDRS) | build
 	$(CC64) $(CFLAGS64) -c $< -o $@
 out/user.o: src/proc/user.c $(PUB_HDRS) | build
+	$(CC64) $(CFLAGS64) -c $< -o $@
+out/elf64.o: src/proc/elf64.c $(PUB_HDRS) | build
 	$(CC64) $(CFLAGS64) -c $< -o $@
 out/syscall.o: src/proc/syscall.c $(PUB_HDRS) | build
 	$(CC64) $(CFLAGS64) -c $< -o $@
@@ -468,8 +472,12 @@ out/user/syscall.o: user/libnos/syscall.S | build
 out/user/test_write.o: user/test_write.c user/libnos/syscall.h | build
 	$(CC64) $(USER_CFLAGS64) -c $< -o $@
 
-out/user_hello.elf: out/user/test_write.o out/user/syscall.o
-	$(LD64) -nostdlib -m elf_x86_64 -e _start --build-id=none -o $@ $^
+out/user_hello.elf: out/user/test_write.o out/user/syscall.o user/hello.ld
+	$(LD64) -nostdlib -m elf_x86_64 -T user/hello.ld --build-id=none -o $@ \
+		out/user/test_write.o out/user/syscall.o
+
+out/user_hello_blob.o: src/proc/user_hello_blob.s out/user_hello.elf | build
+	$(CC64) -c src/proc/user_hello_blob.s -o $@
 
 userland: out/user_hello.elf
 

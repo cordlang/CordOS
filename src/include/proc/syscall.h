@@ -13,12 +13,15 @@
 #define SYS_OPEN   6
 #define SYS_CLOSE  7
 
+#define PROT_READ  1ull
+#define PROT_WRITE 2ull
+#define PROT_EXEC  4ull
+
 /*
- * User pointers (write/read/mmap buffers, open path) must sit in the
- * identity-mapped low half. Bit 63 set = kernel canonical high-half.
- * See docs/abi.md.
+ * User pointers must be PAGE_USER leaves in the low half (bit 63 clear).
+ * The identity RAM window is not a stand-in for "user memory".
  */
-#define USER_IDENTITY_END 0x0000000040000000ull /* 1 GiB identity window */
+#define USER_IDENTITY_END 0x0000000040000000ull /* 1 GiB identity (kernel) */
 
 /* Kernel-callable dispatch (shell / tests). Returns value in rax sense. */
 i64 syscall_dispatch(u64 num, u64 a0, u64 a1, u64 a2);

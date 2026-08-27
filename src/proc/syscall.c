@@ -9,11 +9,16 @@
 #include "string.h"
 #include "pmm.h"
 #include "vmm.h"
+#include "user.h"
+#include "serial.h"
 
 extern void syscall_entry(void);
 
 #define SYS_COPY_MAX 256u
 #define SYS_PATH_MAX 256u
+#define SYS_USER_COPY_MAX (16ull * 1024ull * 1024ull)
+
+static u64 mmap_bump_os = USER_MMAP_BASE;
 
 /* Soft deps on F4 — strong symbols override when task.o is linked. */
 __attribute__((weak)) void task_yield(void)
@@ -36,44 +41,33 @@ static char sys_read_pending[4];
 static u32 sys_read_pending_length;
 static u32 sys_read_pending_position;
 
-static u64 user_mapped_end(void)
-{
-    u64 ram = (u64)total_frames_os * (u64)PAGE_SIZE;
-
-    if (ram == 0 || ram > USER_IDENTITY_END) {
-        return USER_IDENTITY_END;
-    }
-    return ram;
-}
-
 static int user_range_ok(u64 addr, u64 len)
 {
-    u64 mapped;
     u64 end;
     u64 page;
+    u64 start_page;
 
     if (addr == 0) {
         return 0;
     }
-    /* Kernel canonical high-half (and non-canonical sign-extended). */
     if ((addr & (1ull << 63)) != 0) {
         return 0;
     }
-    mapped = user_mapped_end();
-    if (addr >= mapped) {
+    if (len > SYS_USER_COPY_MAX) {
         return 0;
     }
-    if (len > mapped - addr) {
+    if (len != 0 && addr > ~0ull - (len - 1ull)) {
         return 0;
     }
     end = addr + len;
-    page = addr & ~((u64)PAGE_SIZE - 1ull);
+    start_page = addr & ~((u64)PAGE_SIZE - 1ull);
+    page = start_page;
     while (page < end) {
         if (!vmm_page_user(page)) {
             return 0;
         }
         page += PAGE_SIZE;
-        if (page < addr) {
+        if (page < start_page) {
             return 0;
         }
     }
@@ -178,6 +172,7 @@ static i64 sys_write(u64 fd, u64 buf_u, u64 len)
             return -1;
         }
         vga_write_utf8(kbuf, (size_t)chunk);
+        serial_write_n(kbuf, (size_t)chunk);
         done += chunk;
     }
 
@@ -254,20 +249,44 @@ static i64 sys_getpid(void)
 
 static i64 sys_mmap(u64 hint, u64 len, u64 prot)
 {
+    u64 va;
+    u64 map_len;
+    u32 extra;
+
+    if (len == 0 || len > USER_MMAP_MAX) {
+        return -1;
+    }
+    map_len = (len + (u64)PAGE_SIZE - 1ull) & ~((u64)PAGE_SIZE - 1ull);
+    if (map_len == 0) {
+        return -1;
+    }
+    extra = PAGE_WRITE;
     (void)prot;
 
-    if (len == 0) {
-        return -1;
-    }
-    if (hint != 0 && !user_range_ok(hint, len)) {
-        return -1;
-    }
-    if (hint == 0 && len > USER_IDENTITY_END) {
-        return -1;
+    if (hint == 0) {
+        va = mmap_bump_os;
+        if (va < USER_MMAP_BASE || va + map_len < va ||
+            va + map_len > USER_IMAGE_MAX) {
+            return -1;
+        }
+        if (vmm_map_user_anon(va, map_len, extra) != 0) {
+            return -1;
+        }
+        mmap_bump_os = va + map_len;
+        return (i64)va;
     }
 
-    /* Stub — Phase 4 maps user images; no allocator here. */
-    return -1;
+    if ((hint & ((u64)PAGE_SIZE - 1ull)) != 0) {
+        return -1;
+    }
+    if (hint < USER_MMAP_BASE || hint + map_len < hint ||
+        hint + map_len > USER_IMAGE_MAX) {
+        return -1;
+    }
+    if (vmm_map_user_anon(hint, map_len, extra) != 0) {
+        return -1;
+    }
+    return (i64)hint;
 }
 
 static i64 sys_open(u64 path_u)

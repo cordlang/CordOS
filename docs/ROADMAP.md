@@ -37,13 +37,13 @@ en el mismo `cordos.bin`.
 | CPU / IRQ | GDT, IDT, PIC, PIT, PS/2 teclado+ratón | APIC / IPI no |
 | Memoria | PMM, VMM, heap, kselftest al boot | Sin COW ni demand paging |
 | Tareas | `task` + `switch_context` + yield | **Preempt IRQ0 apagado** (congelaba el teclado) |
-| Syscalls | `int 0x80`, números 0–7, copy user exige `PAGE_USER` | `mmap` es stub; read/write no multiplexan fds VFS |
+| Syscalls | `int 0x80`, números 0–7, copy user exige `PAGE_USER` | `mmap` anónimo real; read/write no multiplexan fds VFS |
 | FS | VFS, NosFS, initrd, disco AHCI/IDE | Persistencia real, no truco de VBox |
 | Shell | Kernel-mode, ES/EN, F1 emergencia | No es un proceso usuario |
 | UI | Idioma → splash → onboarding/login → desktop | Apps del dock = código kernel |
 | Red | PCI, virtio-net, WLAN host path | Detectar ≠ stack usable |
 | SMP | `cpu_count_os = 1` | Stub a propósito |
-| Marca | Logo y UI propios | `config.c` sigue en `temporal` (versión, autor, licencia) |
+| Marca | Logo y UI propios | Versión **0.1.0** / codename *instrumento* |
 
 **Hecho y cerrado:** Fases 0–11 del plan original (cimientos → x86_64 → tasks →
 syscalls → FS → shell → boot BIOS opcional → devices stub → SMP stub → FB +
@@ -57,8 +57,8 @@ es histórico.
 Cuando haya conflicto de tiempo, este orden gana:
 
 1. **P0 — No romper el producto.** `make` + `.\run-vbox.ps1` llega a login/desktop. Serial en `out/serial.log`.
-2. **P1 — Userland de verdad.** Un programa ring 3 que escriba y salga; luego la Terminal del dock.
-3. **P2 — El kernel como kernel.** Preempt que no mate el teclado; mmap real; spawn/exec.
+2. **P1 — Userland de verdad.** `user_hello.elf` ya escribe y sale; falta spawn y la Terminal del dock.
+3. **P2 — El kernel como kernel.** Preempt que no mate el teclado; spawn/exec.
 4. **P3 — Disco y ABI cerrados.** read/write sobre fds VFS; loader ELF o `.nos`.
 5. **P4 — Autonomía.** Bootloader propio como camino documentado (GRUB puede quedar de fallback).
 6. **P5 — Escala.** SMP AP, red usable, W^X / SMAP, vsync / modo juego ([`VISUAL_ROADMAP.md`](VISUAL_ROADMAP.md)).
@@ -79,7 +79,7 @@ Resumen. El detalle de módulos está en el árbol `src/`.
 | 2 | PMM/VMM/heap i386 | Cerrada (demo `ARCH=i386`) |
 | 3 | Long mode, `ARCH=x86_64` default | Cerrada |
 | 4 | Tasks + switch | Cerrada en cooperativo; preempt **no** |
-| 5 | Syscalls 0–5 + ABI | Cerrada; 6–7 open/close VFS; mmap stub |
+| 5 | Syscalls 0–5 + ABI | Cerrada; 6–7 open/close VFS; mmap anónimo (Fase 13) |
 | 6 | Initrd + VFS + NosFS + disco | Cerrada (criterio original superado) |
 | 7 | Shell usable | Cerrada en kernel-mode |
 | 8 | MBR + stage2 | Cerrada experimental (`make run-bios`) |
@@ -94,56 +94,49 @@ No reabrir 0–11 para features nuevas. Eso va a 12+.
 ## 5. Fases abiertas (el trabajo)
 
 Cada fase: objetivo, prioridad, piezas, criterio de hecho. Una a la vez.
-Dependencia: no saltar a 16 (SMP) sin 13 (preempt estable).
+Dependencia: no saltar a 16 (SMP) sin 14 (preempt estable).
 
 ### Fase 12 — Marca y contrato de producto
-**Prioridad:** P0 (barato) / deja de ser “temporal”  
-**Dependencias:** ninguna
+**Prioridad:** P0  
+**Estado:** hecha salvo `LICENSE` en la raíz (el autor elige SPDX)
 
-| Pieza | Qué hacer |
-|---|---|
-| `config.c` | `version_os`, `author_os`, `license_os` reales; semver `0.x` |
-| Docs | Este archivo + [`UI_PLAN.md`](UI_PLAN.md) alineados con el desktop actual |
-| Licencia | Un `LICENSE` en la raíz cuando el autor lo fije |
-
-**Hecho cuando:** Acerca de y el serial muestran la misma versión; no queda la palabra `temporal` en `config.c`.
+`config.c` es **0.1.0** / *instrumento* / Owell Andry. Acerca de usa `version_os`.
 
 ---
 
 ### Fase 13 — Un proceso ring 3 de verdad
 **Prioridad:** P1  
-**Dependencias:** syscalls actuales, VMM `PAGE_USER`, smoke `user_smoke()`
+**Estado:** hecho el criterio de ELF; `spawn`/`exec` (syscall 8+) sigue abierto (Fase 15)
 
-Hoy el escritorio y las “apps” son funciones del kernel. Ring 3 existe como
-prueba (`user.c` imprime `r3` y hace `exit`). Eso no es userland.
+`user_hello.elf` (linkado en `0x40000000`) se embebe en el kernel. Tras el
+scheduler, `user_smoke()` lo carga, entra con `iretq`, hace `write`+`exit`.
+`SYS_MMAP` asigna páginas `PAGE_USER` desde `0x41000000`. El trampoline a
+mano queda de fallback.
 
 | Módulo | Piezas | Notas |
 |---|---|---|
-| `mmap` | `SYS_MMAP` deja de ser `-1` | Páginas user, no identity kernel |
-| Loader | ELF64 mínimo **o** formato `.nos` | ELF subset primero ([§8](#8-decisiones)) |
-| `spawn` / `exec` | Syscall nueva (8+) | Un `user_hello.elf` ya se construye (`make userland`) |
-| libc user | `user/libnos` | `write`/`exit` contra ABI real |
-| Aislamiento | Fault CPL3 mata la tarea, no el kernel | Ya hay esbozo en `page_fault.c` |
-
-**Hecho cuando:** desde el kernel (o un menú de debug) se lanza un ELF que hace
-`write` + `exit` y el desktop **sigue vivo**. No hace falta mover el dock aún.
+| `mmap` | `SYS_MMAP` | Anónimo, writable, bump |
+| Loader | ELF64 ET_EXEC x86_64 | `src/proc/elf64.c` |
+| `spawn` / `exec` | Syscall nueva (8+) | Pendiente — hoy lo lanza el kernel |
+| libc user | `user/libnos` | `write`/`exit` |
+| Aislamiento | Fault CPL3 mata la tarea | `page_fault.c` |
 
 ---
 
 ### Fase 14 — Preempt y teclado a la vez
 **Prioridad:** P2  
-**Dependencias:** Fase 4 (switch), comprensión del bug IF=0
+**Estado:** código ON (`schedule()` desde IRQ0 + tarea `tick`); **falta** confirmar PS/2 en VBox  
+**Dependencias:** Fase 4 (switch). EOI del PIC va **antes** del handler; `schedule()` hace `sti` al retomar.
 
-`scheduler_on_tick` está vacío a propósito: un switch en IRQ0 dejaba `IF=0` y
-mataba el PS/2.
+El freeze histórico: switch a mitad de IRQ0 sin `iret` dejaba `IF=0` (interrupt gate) y el teclado moría. Hoy el PIC ya no queda enmascarado esperando el EOI, y la tarea retomada vuelve con IF=1.
 
-| Pieza | Qué hacer |
+| Pieza | Estado |
 |---|---|
-| IRQ0 | Switch con iret / trampolín que restaure IF |
-| Idle | `hlt` en la tarea idle (ya hay loop) |
-| Prueba | Teclear durante dos tareas que hacen yield **y** durante preempt |
+| IRQ0 | `scheduler_on_tick` → `schedule()` |
+| Compañera | tarea `tick` (`hlt` + yield) para que el RR tenga a quién saltar |
+| Prueba | Teclear y mover el ratón en login/desktop con preempt ON |
 
-**Hecho cuando:** preempt ON, teclado y ratón del desktop siguen funcionando.
+**Hecho cuando:** login `admin`/`admin` y el desktop responden con preempt ON.
 
 ---
 
@@ -227,17 +220,17 @@ Page-flip en el LFB de VBox **no** es el camino; ya se intentó.
 
 | # | Hito | Fase | Pri |
 |---|---|---|---|
-| 1 | Fijar `config.c` + dejar de mentir en docs de fase | 12 | P0 |
-| 2 | `SYS_MMAP` real (páginas user) | 13 | P1 |
-| 3 | Cargar y correr `user_hello.elf` desde el kernel | 13 | P1 |
-| 4 | Preempt IRQ0 sin matar PS/2 | 14 | P2 |
+| 1 | Fijar `config.c` + dejar de mentir en docs de fase | 12 | P0 — **hecho** (falta `LICENSE`) |
+| 2 | `SYS_MMAP` real (páginas user) | 13 | P1 — **hecho** |
+| 3 | Cargar y correr `user_hello.elf` desde el kernel | 13 | P1 — **hecho** |
+| 4 | Preempt IRQ0 sin matar PS/2 | 14 | P2 — código ON; confirmar teclado en VBox |
 | 5 | `read`/`write` en fds VFS; spawn como syscall | 13–15 | P2 |
 | 6 | Terminal del dock = proceso ring 3 | 15 | P2 |
 | 7 | V1: reloj `dt` en login/onboarding/desktop | 19 | P5 |
 | 8 | Boot sin GRUB como camino documentado **o** `-smp 2` real | 16 / 18 | P4–P5 |
 
-Si solo hay tiempo para **uno**: el 3. Sin un ELF en ring 3, CordOS sigue siendo
-un kernel con UI, no un OS que ejecuta programas.
+Siguiente código: **confirmar hito 4 en VBox**, luego **hito 5 (spawn)**. El
+desktop sigue siendo ring 0 hasta la Fase 15.
 
 ---
 
@@ -291,8 +284,9 @@ Actualizar esta tabla al cerrar una fila.
 | Kernel interactivo | Teclado + timer + excepciones | Sí |
 | Kernel con memoria | Heap + paginación | Sí |
 | Producto gráfico | Login → desktop en VBox | Sí |
-| Kernel multiproceso | Switch **y** preempt usable | Switch sí, preempt no |
-| Sistema usable | Programas usuario + archivos | Archivos sí, programas no |
+| Un ELF ring 3 | `write`+`exit` y el desktop sigue | Sí (lanzado por el kernel) |
+| Kernel multiproceso | Switch **y** preempt usable | Switch sí; preempt ON (confirmar PS/2) |
+| Sistema usable | Programas usuario + archivos | Archivos sí; spawn/dock no |
 | Sistema autónomo | Arranque propio + instalable | No |
 | Sistema serio | SMP + red + W^X | No |
 

@@ -11,7 +11,7 @@ viaje (lock, editor, etc.), no “construir el Home”.
 **Regla:** no reabrir el framebuffer como si no existiera. Trabajo visual nuevo
 sigue las olas V1–V6 del roadmap visual.
 
-Los strings `name_os` / versión en `config.c` siguen en `temporal` hasta Fase 12.
+Versión de producto: **0.1.0** (`config.c`). Un `LICENSE` en la raíz queda para cuando fijemos SPDX.
 
 ---
 

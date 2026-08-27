@@ -1,4 +1,5 @@
 #include "user.h"
+#include "elf64.h"
 #include "gdt.h"
 #include "isr.h"
 #include "pmm.h"
@@ -6,6 +7,9 @@
 #include "string.h"
 #include "task.h"
 #include "vmm.h"
+
+extern const u8 user_hello_elf_start[];
+extern const u8 user_hello_elf_end[];
 
 #define USER_MSG_OFF 0x200u
 #define USER_CPL_OFF 0x800u
@@ -15,6 +19,8 @@ static const char user_hello[] = "r3\n";
 static u64 user_text_va;
 static u64 user_stack_va;
 static u32 user_smoke_pid;
+static u64 user_elf_rip;
+static u64 user_elf_rsp;
 
 static u8 *emit8(u8 *p, u8 b)
 {
@@ -157,6 +163,12 @@ __attribute__((noinline)) void user_enter(u64 rip, u64 rsp)
     __builtin_unreachable();
 }
 
+static void user_elf_task(void)
+{
+    user_enter(user_elf_rip, user_elf_rsp);
+    task_exit();
+}
+
 static void user_smoke_task(void)
 {
     user_enter(user_text_va, user_stack_va + PAGE_SIZE);
@@ -179,7 +191,25 @@ static bool user_pid_dead(u32 pid)
 void user_smoke(void)
 {
     u16 cs;
+    u32 elf_size;
 
+    elf_size = (u32)(user_hello_elf_end - user_hello_elf_start);
+    if (elf64_load(user_hello_elf_start, elf_size, &user_elf_rip,
+                   &user_elf_rsp) == 0) {
+        serial_write("phase13: entering elf user\n");
+        user_smoke_pid = task_create(user_elf_task, "hello");
+        if (user_smoke_pid == 0) {
+            serial_write("phase13: elf task create failed\n");
+            return;
+        }
+        while (!user_pid_dead(user_smoke_pid)) {
+            task_yield();
+        }
+        serial_write("phase13: elf exited\n");
+        return;
+    }
+
+    serial_write("phase13: elf load failed, trampoline\n");
     if (!user_map_pages()) {
         serial_write("phase4: user map failed\n");
         return;

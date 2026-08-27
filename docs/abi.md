@@ -44,27 +44,27 @@ buffer (`SYS_COPY_MAX` = 256 bytes per chunk; paths capped at `SYS_PATH_MAX` =
 
 A pointer range `[addr, addr+len)` is accepted only if **all** of:
 
-1. `addr != NULL` (`0` is rejected; `mmap` hint `0` means “no preferred address”)
+1. `addr != NULL` (`0` is rejected; `mmap` hint `0` means “kernel picks the VA”)
 2. Bit 63 is clear (not a kernel canonical high address; FB lives at
    `0xFFFF800000100000`)
-3. No wrap: `len` does not overflow past the identity window
-4. The whole range sits in the **identity user window** `[0x1, USER_IDENTITY_END)`
-   with `USER_IDENTITY_END = 0x40000000` (1 GiB — boot + `vmm_init` identity map)
+3. No wrap; `len` ≤ 16 MiB
+4. **Every page is `PAGE_USER`** at the leaf (and user bit on the walk).
+   Identity RAM without `U/S` is **not** a valid user buffer.
 
-Anything at or above 1 GiB, any wrap, and any high-half canonical address is
-`-1`. Kernel-side `syscall_dispatch` with `.rodata` / stack buffers in the
-identity map still works.
+User images live at `0x40000000` (see `user/hello.ld`). `mmap` anonymous
+mappings start at `0x41000000`. Kernel `.rodata` is no longer a valid
+`syscall_dispatch` buffer.
 
 ## Numbers 0–7
 
 | # | Name | Prototype | Notes |
 |---|------|-----------|--------|
 | 0 | `exit` | `exit(code)` — `rdi` = code | If `task_current()` is non-NULL, `task_exit()` (TASK_DEAD + schedule). Else halt (`cli; hlt`). |
-| 1 | `write` | `write(fd, buf, len)` | `fd=1` → VGA UTF-8 via bounce buffer. Other fds (including vfs) → `-1` (`vfs_write` is Phase 6). Bad pointer → `-1`. |
+| 1 | `write` | `write(fd, buf, len)` | `fd=1` → VGA UTF-8 **and** serial. Other fds → `-1`. Bad pointer → `-1`. |
 | 2 | `read` | `read(fd, buf, len)` | `fd=0` → keyboard UTF-8, blocking `hlt`. Else `-1`. Bad pointer → `-1`. |
 | 3 | `yield` | `yield()` | `task_yield()` (weak no-op if F4 not linked) |
 | 4 | `getpid` | `getpid()` | `task_current()->pid` or `0` |
-| 5 | `mmap` | `mmap(hint, len, prot)` | **Stub** `-1`. Rejects bad `hint`/`len` first. `hint=0` is allowed (no preferred VA). |
+| 5 | `mmap` | `mmap(hint, len, prot)` | Anonymous user pages, `PAGE_WRITE`. `hint=0` bump-allocates from `0x41000000`. `len` rounded to 4 KiB, max 16 MiB. Returns VA or `-1`. `prot` is accepted and currently ignored (always writable). |
 | 6 | `open` | `open(path)` | Copies a NUL-terminated path, then `vfs_open`. `-1` if bad pointer, unterminated path, missing file, or vfs not mounted. |
 | 7 | `close` | `close(fd)` | `vfs_close(fd)`. `-1` if not mounted / bad fd. |
 

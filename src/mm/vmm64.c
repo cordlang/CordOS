@@ -302,3 +302,64 @@ void vmm_init(void)
     serial_print_hex((u32)pml4_os);
     serial_write("\n");
 }
+
+int vmm_map_user_anon(u64 va, u64 len, u32 extra_flags)
+{
+    u64 p;
+    u64 done;
+    u32 flags;
+    void *frame;
+
+    if ((va & ((u64)PAGE_SIZE - 1ull)) != 0 ||
+        (len & ((u64)PAGE_SIZE - 1ull)) != 0 ||
+        len == 0) {
+        return -1;
+    }
+    if (va + len < va) {
+        return -1;
+    }
+
+    for (p = va; p < va + len; p += PAGE_SIZE) {
+        if (vmm_page_mapped(p) && !vmm_page_user(p)) {
+            return -1;
+        }
+        if (vmm_page_user(p)) {
+            return -1;
+        }
+    }
+
+    flags = PAGE_PRESENT | PAGE_USER | (extra_flags & PAGE_WRITE);
+    done = 0;
+    for (p = va; p < va + len; p += PAGE_SIZE) {
+        frame = pmm_alloc_page();
+        if (frame == NULL) {
+            vmm_unmap_user_anon(va, done);
+            return -1;
+        }
+        memset(frame, 0, PAGE_SIZE);
+        vmm_map_page(p, (u64)frame, flags);
+        done += PAGE_SIZE;
+    }
+    return 0;
+}
+
+void vmm_unmap_user_anon(u64 va, u64 len)
+{
+    u64 p;
+    u64 phys;
+
+    if ((va & ((u64)PAGE_SIZE - 1ull)) != 0 ||
+        (len & ((u64)PAGE_SIZE - 1ull)) != 0) {
+        return;
+    }
+    for (p = va; p < va + len; p += PAGE_SIZE) {
+        if (!vmm_page_user(p)) {
+            continue;
+        }
+        phys = vmm_get_physical(p) & ~((u64)PAGE_SIZE - 1ull);
+        vmm_unmap_page(p);
+        if (phys != 0) {
+            pmm_free_page((void *)phys);
+        }
+    }
+}

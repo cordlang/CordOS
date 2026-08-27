@@ -214,15 +214,40 @@ static void demo_task_b(void)
     }
 }
 
+/* Second READY task so IRQ0 RR actually switches (idle alone is a no-op). */
+static void preempt_companion(void)
+{
+    for (;;) {
+        __asm__ volatile ("hlt");
+        task_yield();
+    }
+}
+
 void phase4_init(void)
 {
-    /* Scheduler ready; demo loops stay unused — they starved IRQs/keyboard. */
+    u32 t0;
+    u32 pid;
+
     task_init();
     sched_start();
     serial_write("scheduler: idle OK\n");
 
     /* One-shot ring-3 iret; SYS_EXIT kills the smoke task and returns here. */
     user_smoke();
+
+    pid = task_create(preempt_companion, "tick");
+    if (pid == 0) {
+        serial_write("phase14: companion failed\n");
+    } else {
+        serial_write("scheduler: preempt ON\n");
+        t0 = scheduler_ticks_os;
+        while ((scheduler_ticks_os - t0) < 10u) {
+            __asm__ volatile ("hlt");
+        }
+        serial_write("phase14: ticks=");
+        serial_print_u32(scheduler_ticks_os - t0);
+        serial_write("\n");
+    }
 
     (void)demo_task_a;
     (void)demo_task_b;

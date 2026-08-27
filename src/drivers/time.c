@@ -16,8 +16,7 @@ static void timer_irq(struct interrupt_frame *frame)
     (void)frame;
     ++ticks_os;
 #ifdef __x86_64__
-    /* Preemptive RR: may switch before returning to irq_handler EOI path.
-     * isr64 irq_handler sends EOI before this handler for that reason. */
+    /* PIC EOI already ran in irq_handler. May switch to another task. */
     scheduler_on_tick();
 #endif
 }
