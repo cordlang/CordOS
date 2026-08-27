@@ -1,4 +1,5 @@
 #include "desktop_priv.h"
+#include "string.h"
 
 i32 z_top(void)
 {
@@ -265,11 +266,13 @@ i32 win_open(enum win_kind kind)
     w = &s_win[id];
     w->used = true;
     w->kind = kind;
-    w->w = kind == WIN_POWER ? 440u : 760u;
+    w->w = kind == WIN_POWER ? 440u : (kind == WIN_ACTIVITY ? 900u : 760u);
     if (kind == WIN_POWER) {
         w->h = 220u;
     } else if (kind == WIN_SETTINGS) {
         w->h = 620u;
+    } else if (kind == WIN_ACTIVITY) {
+        w->h = 580u;
     } else {
         w->h = 520u;
     }
@@ -316,8 +319,10 @@ void action_open(u32 item)
     } else if (item == 3) {
         (void)win_open(WIN_ABOUT);
     } else if (item == 4) {
-        s_logout = true;
+        (void)win_open(WIN_ACTIVITY);
     } else if (item == 5) {
+        s_logout = true;
+    } else if (item == 6) {
         (void)win_open(WIN_POWER);
     }
 }
@@ -343,6 +348,201 @@ void settings_lang_btn(u32 bx, u32 lang_y, u32 i, u32 *x, u32 *y)
 {
     *x = bx + 24u + (i % 2u) * 156u;
     *y = lang_y + (i / 2u) * 48u;
+}
+
+static void draw_meter(u32 x, u32 y, u32 w, u32 h, u32 pct, struct rgb fill)
+{
+    u32 inner;
+
+    if (w < 8u || h < 4u) {
+        return;
+    }
+    if (pct > 100u) {
+        pct = 100u;
+    }
+    draw_round_fill_hard(x, y, w, h, h / 2u, THEME_GRID, 255u);
+    inner = (w * pct) / 100u;
+    if (inner >= 4u) {
+        draw_round_fill_hard(x, y, inner, h, h / 2u, fill, 255u);
+    }
+}
+
+static void draw_spark(u32 x, u32 y, u32 w, u32 h, const u8 *hist, struct rgb col)
+{
+    u32 i;
+    u32 cw;
+
+    if (w < SYSMON_HIST || h < 8u || hist == NULL) {
+        return;
+    }
+    cw = w / SYSMON_HIST;
+    if (cw < 1u) {
+        cw = 1u;
+    }
+    for (i = 0; i < SYSMON_HIST; i++) {
+        u32 bh = ((u32)hist[i] * (h - 2u)) / 100u;
+        u32 bx = x + i * cw;
+        u32 by;
+
+        if (bh < 2u) {
+            bh = 2u;
+        }
+        by = y + h - bh;
+        fb_fill_rect(bx, by, cw > 1u ? cw - 1u : cw, bh, col.r, col.g, col.b);
+    }
+}
+
+static void draw_card(u32 x, u32 y, u32 w, u32 h)
+{
+    draw_round_fill_hard(x, y, w, h, 14u, THEME_FIELD, 255u);
+}
+
+static void draw_monitor(struct window *win)
+{
+    const struct sysmon_snap *s;
+    u32 bx = (u32)win->x;
+    u32 by = (u32)win->y;
+    u32 pad = 18u;
+    u32 gap = 12u;
+    u32 inner_w;
+    u32 inner_h;
+    u32 cw;
+    u32 ch;
+    u32 i;
+    struct rgb cpu_c = THEME_ACCENT;
+    struct rgb ram_c = { 0x4B, 0x9A, 0xFF };
+    struct rgb ok_c = { 0x6B, 0xC9, 0x8A };
+    struct rgb dim = THEME_FG_DIM;
+    char gpu_sub[36];
+    char disk_sub[28];
+    char sys_sub[36];
+    char nbuf[12];
+
+    s = sysmon_get();
+
+    gpu_sub[0] = '\0';
+    u32_to_dec(s->fb_bpp, nbuf, sizeof(nbuf));
+    copy_n(gpu_sub, sizeof(gpu_sub), nbuf);
+    copy_n(gpu_sub + strlen(gpu_sub), sizeof(gpu_sub) - strlen(gpu_sub), " bpp  ");
+    u32_to_dec(s->fb_mib, nbuf, sizeof(nbuf));
+    copy_n(gpu_sub + strlen(gpu_sub), sizeof(gpu_sub) - strlen(gpu_sub), nbuf);
+    copy_n(gpu_sub + strlen(gpu_sub), sizeof(gpu_sub) - strlen(gpu_sub), " MiB");
+
+    disk_sub[0] = '\0';
+    u32_to_dec(s->blk_n, nbuf, sizeof(nbuf));
+    copy_n(disk_sub, sizeof(disk_sub), nbuf);
+    copy_n(disk_sub + strlen(disk_sub), sizeof(disk_sub) - strlen(disk_sub), " ");
+    copy_n(disk_sub + strlen(disk_sub), sizeof(disk_sub) - strlen(disk_sub),
+           i18n(MSG_ACT_BLK));
+
+    sys_sub[0] = '\0';
+    u32_to_dec(s->tasks, nbuf, sizeof(nbuf));
+    copy_n(sys_sub, sizeof(sys_sub), nbuf);
+    copy_n(sys_sub + strlen(sys_sub), sizeof(sys_sub) - strlen(sys_sub), " ");
+    copy_n(sys_sub + strlen(sys_sub), sizeof(sys_sub) - strlen(sys_sub),
+           i18n(MSG_ACT_TASKS));
+    copy_n(sys_sub + strlen(sys_sub), sizeof(sys_sub) - strlen(sys_sub), " · ");
+    u32_to_dec(s->pci_n, nbuf, sizeof(nbuf));
+    copy_n(sys_sub + strlen(sys_sub), sizeof(sys_sub) - strlen(sys_sub), nbuf);
+    copy_n(sys_sub + strlen(sys_sub), sizeof(sys_sub) - strlen(sys_sub), " PCI");
+
+    inner_w = win->w > pad * 2u + gap ? win->w - pad * 2u - gap : win->w / 2u;
+    inner_h = win->h > TITLE_H + pad * 2u + gap * 2u
+                  ? win->h - TITLE_H - pad * 2u - gap * 2u
+                  : 120u;
+    cw = inner_w / 2u;
+    ch = inner_h / 3u;
+    if (cw < 160u) {
+        cw = 160u;
+    }
+    if (ch < 110u) {
+        ch = 110u;
+    }
+
+    for (i = 0; i < 6u; i++) {
+        u32 row = i / 2u;
+        u32 col = i % 2u;
+        u32 cx = bx + pad + col * (cw + gap);
+        u32 cy = by + TITLE_H + pad + row * (ch + gap);
+        u32 tx = cx + 16u;
+        u32 ty = cy + 12u;
+        const char *title = "";
+        const char *hero = "";
+        const char *sub = "";
+        u32 pct = 0;
+        struct rgb bar_c = cpu_c;
+        const u8 *hist = NULL;
+        u32 bar_w = cw > 40u ? cw - 32u : cw;
+
+        draw_card(cx, cy, cw, ch);
+
+        if (i == 0u) {
+            title = i18n(MSG_ACT_CPU);
+            hero = s->cpu_txt;
+            sub = i18n(s->preempt ? MSG_ACT_PREEMPT_ON : MSG_ACT_PREEMPT_OFF);
+            pct = s->cpu_pct;
+            hist = s->cpu_hist;
+        } else if (i == 1u) {
+            title = i18n(MSG_ACT_RAM);
+            hero = s->ram_txt;
+            sub = i18n(MSG_ACT_HEAP);
+            pct = s->ram_pct;
+            bar_c = ram_c;
+            hist = s->ram_hist;
+        } else if (i == 2u) {
+            title = i18n(MSG_ACT_GPU);
+            hero = s->fb_txt;
+            sub = gpu_sub;
+        } else if (i == 3u) {
+            title = i18n(MSG_ACT_NET);
+            if (!s->net_nic) {
+                hero = i18n(MSG_ACT_NO_NIC);
+                sub = i18n(MSG_ACT_DOWN);
+            } else if (s->net_cfg && s->ip_txt[0] != '\0') {
+                hero = s->ip_txt;
+                sub = s->net_link ? s->nic_txt : i18n(MSG_ACT_DOWN);
+            } else {
+                hero = s->nic_txt[0] != '\0' ? s->nic_txt : i18n(MSG_ACT_DOWN);
+                sub = s->net_link ? i18n(MSG_ACT_LINK) : i18n(MSG_ACT_DOWN);
+            }
+        } else if (i == 4u) {
+            title = i18n(MSG_ACT_DISK);
+            hero = s->persist ? i18n(MSG_ACT_PERSIST) : i18n(MSG_ACT_INITRD);
+            sub = disk_sub;
+        } else {
+            title = i18n(MSG_ACT_SYS);
+            hero = s->up_txt;
+            sub = sys_sub;
+        }
+
+        draw_text(tx, ty, title, dim, 1);
+        draw_text_clip(tx, ty + FONT_LINE - 6u, cx + cw - 12u, hero, THEME_FG, 2);
+
+        if (hist != NULL) {
+            draw_meter(tx, ty + FONT_LINE + FONT_HEIGHT + 4u, bar_w, 10u, pct,
+                       bar_c);
+            draw_spark(tx, ty + FONT_LINE + FONT_HEIGHT + 22u, bar_w,
+                       ch > 96u ? ch - 96u : 20u, hist, bar_c);
+        } else if (i == 2u) {
+            draw_text_clip(tx, ty + FONT_LINE + FONT_HEIGHT + 6u, cx + cw - 12u,
+                           i18n(MSG_ACT_NO_3D), dim, 1);
+            draw_text_clip(tx, cy + ch - FONT_LINE, cx + cw - 12u, sub, dim, 1);
+        } else if (i == 3u) {
+            draw_text_clip(tx, ty + FONT_LINE + FONT_HEIGHT + 6u, cx + cw - 12u,
+                           sub, s->net_link ? ok_c : dim, 1);
+            if (s->wlan && s->ssid_txt[0] != '\0') {
+                draw_text_clip(tx, ty + FONT_LINE * 2u + FONT_HEIGHT,
+                               cx + cw - 12u, s->ssid_txt, THEME_ACCENT, 1);
+            }
+        } else {
+            draw_text_clip(tx, ty + FONT_LINE + FONT_HEIGHT + 6u, cx + cw - 12u,
+                           sub, dim, 1);
+        }
+        if (hist != NULL) {
+            draw_text_clip(tx, cy + ch - FONT_LINE + 4u, cx + cw - 12u, sub, dim,
+                           1);
+        }
+    }
 }
 
 static void draw_win_body(struct window *w, u32 id)
@@ -453,6 +653,8 @@ static void draw_win_body(struct window *w, u32 id)
             draw_text(ix, ic_y + IC_THUMB + 8u, i18n(ic_names[s]),
                       ic_sel == s ? THEME_ACCENT : THEME_FG_DIM, 1);
         }
+    } else if (w->kind == WIN_ACTIVITY) {
+        draw_monitor(w);
     } else if (w->kind == WIN_ABOUT) {
         u32 py = by + TITLE_H + 12u;
         draw_text(bx + 24, py, name_os, THEME_FG, 2);

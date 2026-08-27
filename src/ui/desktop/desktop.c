@@ -155,6 +155,17 @@ void desktop_run(void)
             dirty = true;
         }
 
+        if (sysmon_poll()) {
+            u32 wi;
+
+            for (wi = 0; wi < MAX_WIN; ++wi) {
+                if (s_win[wi].used && s_win[wi].kind == WIN_ACTIVITY) {
+                    dirty = true;
+                    break;
+                }
+            }
+        }
+
         if (!dirty && (mouse_x() != last_x || mouse_y() != last_y)) {
             u32 live = hit_test(mouse_x(), mouse_y());
 
@@ -184,7 +195,9 @@ void desktop_run(void)
         last_x = mouse_x();
         last_y = mouse_y();
         if (!dirty && !ui_busy() && !mouse_has_event()) {
+            sysmon_idle_begin();
             __asm__ volatile("hlt");
+            sysmon_idle_end();
         }
     }
 }

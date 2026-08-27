@@ -128,16 +128,24 @@ static bool pci_cb_log(const struct pci_device *dev, void *ctx)
     return false;
 }
 
+static u32 pci_count_os;
+
 u32 pci_init(void)
 {
     u32 count = 0;
 
     serial_write("pci: enumerating buses 0-7\n");
     (void)pci_walk(pci_cb_log, &count);
+    pci_count_os = count;
     serial_write("pci: found ");
     serial_print_u32(count);
     serial_write(" device(s)\n");
     return count;
+}
+
+u32 pci_device_count(void)
+{
+    return pci_count_os;
 }
 
 struct pci_id_query {

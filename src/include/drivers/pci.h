@@ -38,6 +38,8 @@ void pci_config_write32(u8 bus, u8 slot, u8 func, u8 offset, u32 value);
 
 /* Enumerate buses 0–7; log devices on serial. Returns count found. */
 u32 pci_init(void);
+/* Last pci_init() count (0 before init). */
+u32 pci_device_count(void);
 
 /* Optional lookup helper used by virtio-net. */
 bool pci_find_device(u16 vendor_id, u16 device_id, struct pci_device *out);

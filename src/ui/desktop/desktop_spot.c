@@ -85,17 +85,18 @@ static void spot_rebuild(void)
 {
     static const enum msg_id labels[MENU_COUNT] = {
         MSG_HOME_FILES, MSG_HOME_TERMINAL, MSG_HOME_SETTINGS,
-        MSG_HOME_ABOUT, MSG_HOME_LOGOUT, MSG_HOME_POWER
+        MSG_HOME_ABOUT, MSG_HOME_ACTIVITY, MSG_HOME_LOGOUT, MSG_HOME_POWER
     };
     static const enum ui_icon icons[MENU_COUNT] = {
         UI_ICON_FILES, UI_ICON_TERM, UI_ICON_SETTINGS,
-        UI_ICON_ABOUT, UI_ICON_LOGOUT, UI_ICON_POWER
+        UI_ICON_ABOUT, UI_ICON_ACTIVITY, UI_ICON_LOGOUT, UI_ICON_POWER
     };
     static const char *alias[MENU_COUNT] = {
         "files archivos explorer",
         "terminal shell consola cmd",
         "settings ajustes config",
         "about acerca info",
+        "activity actividad monitor cpu ram gpu red",
         "logout salir sesion sign out",
         "power apagar shutdown halt"
     };

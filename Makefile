@@ -181,6 +181,7 @@ KERNEL64_OBJS := \
 	out/vmm64.o \
 	out/heap64.o \
 	out/kselftest.o \
+	out/sysmon.o \
 	out/page_fault64.o \
 	out/task.o \
 	out/sched.o \
@@ -292,6 +293,8 @@ out/vmm64.o: src/mm/vmm64.c $(PUB_HDRS) | build
 out/heap64.o: src/mm/heap.c $(PUB_HDRS) | build
 	$(CC64) $(CFLAGS64) -c $< -o $@
 out/kselftest.o: src/kernel/kselftest.c $(PUB_HDRS) | build
+	$(CC64) $(CFLAGS64) -c $< -o $@
+out/sysmon.o: src/kernel/sysmon.c $(PUB_HDRS) | build
 	$(CC64) $(CFLAGS64) -c $< -o $@
 out/page_fault64.o: src/mm/page_fault.c $(PUB_HDRS) | build
 	$(CC64) $(CFLAGS64) -c $< -o $@

@@ -27,12 +27,13 @@
 #include "icons.h"
 #include "wallpaper.h"
 #include "net.h"
+#include "sysmon.h"
 
 #define DOCK_M     ui_px(18u)
 #define DOCK_H     ui_px(66u)
 #define DOCK_SLOT  ui_px(56u)
 #define DOCK_PADX  ui_px(18u)
-#define DOCK_APPS  5u
+#define DOCK_APPS  6u
 #define DOCK_ICON  ui_px(40u)
 #define DESK_TOP   ui_px(118u)
 #define STAT_H     ui_px(36u)
@@ -46,8 +47,8 @@
 #define MAX_FILES  8
 #define TERM_ROWS  11
 #define TERM_COLS  52
-#define ICON_COUNT 4
-#define MENU_COUNT 6
+#define ICON_COUNT 5
+#define MENU_COUNT 7
 #define CTX_COUNT  5
 
 #define HIT_NONE     0u
@@ -88,6 +89,7 @@ enum win_kind {
     WIN_TERM,
     WIN_SETTINGS,
     WIN_ABOUT,
+    WIN_ACTIVITY,
     WIN_POWER
 };
 
@@ -218,6 +220,7 @@ static inline const char *win_title(enum win_kind kind)
     case WIN_TERM:     return i18n(MSG_HOME_TERMINAL);
     case WIN_SETTINGS: return i18n(MSG_HOME_SETTINGS);
     case WIN_ABOUT:    return i18n(MSG_HOME_ABOUT);
+    case WIN_ACTIVITY: return i18n(MSG_HOME_ACTIVITY);
     case WIN_POWER:    return i18n(MSG_HOME_POWER);
     default:           return "?";
     }

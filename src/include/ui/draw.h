@@ -15,7 +15,8 @@ enum ui_icon {
     UI_ICON_BAT_LOW,
     UI_ICON_BAT_HALF,
     UI_ICON_BAT_FULL,
-    UI_ICON_BAT_CHARGE
+    UI_ICON_BAT_CHARGE,
+    UI_ICON_ACTIVITY
 };
 
 void draw_quality_init(void);

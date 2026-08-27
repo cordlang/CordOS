@@ -129,7 +129,7 @@ void icon_geom(u32 i, u32 *x, u32 *y, u32 *w, u32 *h)
     u32 cell_w = ui_px(128u);
     u32 cell_h = ui_px(108u);
     u32 gap = ui_px(28u);
-    u32 cols = (sw >= ui_px(780u)) ? ICON_COUNT : 2u;
+    u32 cols = (sw >= ui_px(1100u)) ? ICON_COUNT : ((sw >= ui_px(780u)) ? 3u : 2u);
     u32 rows = (ICON_COUNT + cols - 1u) / cols;
     u32 grid_w = cols * cell_w + (cols - 1u) * gap;
     u32 grid_h = rows * cell_h + (rows - 1u) * gap;
@@ -186,10 +186,12 @@ void ctx_geom(u32 *x, u32 *y, u32 *w, u32 *h)
 static void draw_desktop_icons(void)
 {
     const enum msg_id labels[ICON_COUNT] = {
-        MSG_HOME_FILES, MSG_HOME_TERMINAL, MSG_HOME_SETTINGS, MSG_HOME_ABOUT
+        MSG_HOME_FILES, MSG_HOME_TERMINAL, MSG_HOME_SETTINGS, MSG_HOME_ABOUT,
+        MSG_HOME_ACTIVITY
     };
     const enum ui_icon icons[ICON_COUNT] = {
-        UI_ICON_FILES, UI_ICON_TERM, UI_ICON_SETTINGS, UI_ICON_ABOUT
+        UI_ICON_FILES, UI_ICON_TERM, UI_ICON_SETTINGS, UI_ICON_ABOUT,
+        UI_ICON_ACTIVITY
     };
     u32 i;
 
@@ -249,10 +251,10 @@ void draw_dock(void)
 {
     const enum ui_icon apps[DOCK_APPS] = {
         UI_ICON_LAUNCHER, UI_ICON_FILES, UI_ICON_TERM,
-        UI_ICON_SETTINGS, UI_ICON_ABOUT
+        UI_ICON_SETTINGS, UI_ICON_ABOUT, UI_ICON_ACTIVITY
     };
     const enum win_kind kinds[DOCK_APPS] = {
-        WIN_FILES, WIN_FILES, WIN_TERM, WIN_SETTINGS, WIN_ABOUT
+        WIN_FILES, WIN_FILES, WIN_TERM, WIN_SETTINGS, WIN_ABOUT, WIN_ACTIVITY
     };
     u32 dx;
     u32 dy;
@@ -302,11 +304,11 @@ void draw_menu(void)
 {
     const enum msg_id labels[MENU_COUNT] = {
         MSG_HOME_FILES, MSG_HOME_TERMINAL, MSG_HOME_SETTINGS,
-        MSG_HOME_ABOUT, MSG_HOME_LOGOUT, MSG_HOME_POWER
+        MSG_HOME_ABOUT, MSG_HOME_ACTIVITY, MSG_HOME_LOGOUT, MSG_HOME_POWER
     };
     const enum ui_icon icons[MENU_COUNT] = {
         UI_ICON_FILES, UI_ICON_TERM, UI_ICON_SETTINGS,
-        UI_ICON_ABOUT, UI_ICON_LOGOUT, UI_ICON_POWER
+        UI_ICON_ABOUT, UI_ICON_ACTIVITY, UI_ICON_LOGOUT, UI_ICON_POWER
     };
     u32 mx;
     u32 my;

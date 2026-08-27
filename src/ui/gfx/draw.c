@@ -934,6 +934,49 @@ void draw_text_clip(u32 x, u32 y, u32 max_x, const char *text, struct rgb color,
     }
 }
 
+static void draw_activity_glyph(u32 x, u32 y, u32 size, struct rgb color)
+{
+    struct rgb plate = { 0x4B, 0x9A, 0xFF };
+    struct rgb ink = { 0xF7, 0xF8, 0xFA };
+    u32 bar_w;
+    u32 gap;
+    u32 base_y;
+    u32 heights[3];
+    u32 i;
+    u32 inner;
+
+    if (size < 10u) {
+        size = 10u;
+    }
+    if (size >= 32u) {
+        draw_round_fill(x, y, size, size, size / 2u, plate, 255u);
+        inner = size > 16u ? size - 16u : size;
+        x += (size - inner) / 2u;
+        y += (size - inner) / 2u;
+        size = inner;
+        color = ink;
+    }
+    bar_w = size / 5u;
+    if (bar_w < 2u) {
+        bar_w = 2u;
+    }
+    gap = size / 10u;
+    if (gap < 1u) {
+        gap = 1u;
+    }
+    heights[0] = size * 5u / 10u;
+    heights[1] = size * 9u / 10u;
+    heights[2] = size * 6u / 10u;
+    base_y = y + size;
+    for (i = 0; i < 3u; i++) {
+        u32 bh = heights[i];
+        u32 bx = x + i * (bar_w + gap);
+        u32 by = base_y > bh ? base_y - bh : y;
+
+        draw_round_fill(bx, by, bar_w, bh, bar_w / 2u, color, 255u);
+    }
+}
+
 void draw_icon_styled(u32 x, u32 y, u32 size, enum ui_icon icon, struct rgb color,
                       u32 style)
 {
@@ -942,6 +985,10 @@ void draw_icon_styled(u32 x, u32 y, u32 size, enum ui_icon icon, struct rgb colo
     u32 row;
     u32 col;
 
+    if (icon == UI_ICON_ACTIVITY) {
+        draw_activity_glyph(x, y, size, color);
+        return;
+    }
     if ((u32)icon >= ICON_PACK) {
         icon = UI_ICON_FILES;
     }
